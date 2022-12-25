@@ -1,7 +1,9 @@
 # Bubble_dynamics_simulation
-1. [**Python basics**](#Python basics): Feel free to skip this part. Helps with installations, briefly introduces some special python construct, and links tutorials. Important construct for this library: dictionaries, fstrings. NINCS KÉSZ!
-2. [**The simulation**](#The simulation): Introduces some of the basic functions in *diffeq.py*. Shows, how to solve the differential equation with different control parameters. Shows how to plot, process, or save the results.
-3. [**Bruteforce parameter sweep**](#Bruteforce parameter sweep): A simple multithread example. A control parameter space is sweeped with the given resolution. Results are saved into CSV files.
+1. [**Python basics**](#python_basics): Feel free to skip this part. Helps with installations, briefly introduces some special python construct, and links tutorials. Important construct for this library: dictionaries, fstrings. NINCS KÉSZ!
+2. [**The simulation**](#the_simulation): Introduces some of the basic functions in *diffeq.py*. Shows, how to solve the differential equation with different control parameters. Shows how to plot, process, or save the results.
+3. [**Bruteforce parameter sweep**](#bruteforce_parameter_sweep): A simple multithread example. A control parameter space is sweeped with the given resolution. Results are saved into CSV files.
+
+<a name="python_basics"/>
 
 ## Python basics
 Feel free to skip this part.
@@ -50,6 +52,8 @@ datas.data
 1
 ~~~
 This code is also included in *diffeq.py*. Other features of the dictionary is not affected. Most of my codes uses the dot notation. Note, that this makes the dictionaries a bit slower. Also, multiprocessing.Pool() doesn't like dotdicts.
+
+<a name="the_simulation"/>
 
 ## The simulation
 Example file: *full bubble model (diffeq).ipynb* <br>
@@ -264,6 +268,7 @@ file.write_solution(data, num_sol, 'testfile')
 ~~~
 Two files will be created in the *test* folder. *testfile_data.csv* contains the data dictionary, while *testfile_num_sol.csv* contains the numerical solution. This function is independent of new_file() and close().
 
+<a name="bruteforce_parameter_sweep"/>
 
 ## Bruteforce parameter sweep
 Example file: *bruteforce parameter sweep.ipynb* <br>
