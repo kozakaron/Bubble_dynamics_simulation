@@ -2,6 +2,7 @@
 1. [**Python basics**](#python_basics): Feel free to skip this part. Helps with installations, briefly introduces some special python construct, and links tutorials. Important construct for this library: dictionaries, fstrings. NINCS KÉSZ!
 2. [**The simulation**](#the_simulation): Introduces some of the basic functions in *diffeq.py*. Shows, how to solve the differential equation with different control parameters. Shows how to plot, process, or save the results.
 3. [**Bruteforce parameter sweep**](#bruteforce_parameter_sweep): A simple multithread example. A control parameter space is sweeped with the given resolution. Results are saved into CSV files.
+4. [**Read CSV files**](#read_csv_files): This example showcases how to read CSV files from a given folder. The data is loaded into a pandas dataframe. Different statistics and data manipulation can be done with the dataframe.
 
 <a name="python_basics"/>
 
@@ -244,31 +245,38 @@ The most important functions: <br>
   
   
 * **Make_dir**: class for saving things into CSV files. To use, first run:
-~~~ Python
-file = de.Make_dir('test')
-~~~
-This will create a folder called test, or use the existing one. Inside the folder, you can create a new, automatically numbered CSV file with a header:
-~~~ Python
-file.new_file()
-~~~
-The default name is *output_1.csv* with the number automatically incrementing itself. You can add a new line and store results:
-~~~Python
-data = de.simulate(cpar)
-file.write_line(data)
-~~~
-You can close the CSV to save it:
-~~~Python
-file.close()
-~~~
-You can also save the numerical solution:
-~~~Python
-num_sol, error_code, elapsed_time = de.solve(cpar)
-data = de.get_data(cpar, num_sol, error_code, elapsed_time)
-file.write_solution(data, num_sol, 'testfile')
-~~~
-Two files will be created in the *test* folder. *testfile_data.csv* contains the data dictionary, while *testfile_num_sol.csv* contains the numerical solution. This function is independent of new_file() and close().
+    ~~~ Python
+    file = de.Make_dir('test')
+    ~~~
+    This will create a folder called test, or use the existing one. Inside the folder, you can create a new, automatically numbered CSV file with a header:
+    ~~~ Python
+    file.new_file()
+    ~~~
+    The default name is *output_1.csv* with the number automatically incrementing itself. You can add a new line and store results:
+    ~~~Python
+    data = de.simulate(cpar)
+    file.write_line(data)
+    ~~~
+    You can close the CSV to save it:
+    ~~~Python
+    file.close()
+    ~~~
+    You can also save the numerical solution:
+    ~~~Python
+    num_sol, error_code, elapsed_time = de.solve(cpar)
+    data = de.get_data(cpar, num_sol, error_code, elapsed_time)
+    file.write_solution(data, num_sol, 'testfile')
+    ~~~
+    Two files will be created in the *test* folder. *testfile_data.csv* contains the data dictionary, while *testfile_num_sol.csv* contains the numerical solution. This     function is independent of new_file() and close().
 
 <a name="bruteforce_parameter_sweep"/>
 
 ## Bruteforce parameter sweep
 Example file: *bruteforce parameter sweep.ipynb* <br>
+
+<a name="read_csv_files"/>
+
+## Read CSV files
+Example file: *read csv files.ipynb* <br>
+
+[pandas](https://pandas.pydata.org/docs/)
