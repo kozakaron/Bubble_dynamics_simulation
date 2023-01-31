@@ -4,11 +4,13 @@
 
 1. [**Python basics**](#python_basics): Feel free to skip this part. Helps with installations, briefly introduces some special python construct, and links tutorials. Might be helpful, if you are new to python.
 
-2. [**The simulation**](#the_simulation): Introduces some of the basic functions in *diffeq.py*. Shows, how to solve the differential equation with different control parameters. Shows how to plot, process, or save the results.
+2. [**The simulation**](#the_simulation): Introduces some of the basic functions in *full_bubble_model.py*. Shows, how to solve the differential equation with different control parameters. Shows how to plot, process, or save the results.
 
 3. [**Bruteforce parameter sweep**](#bruteforce_parameter_sweep): A simple multithread example. A control parameter space is sweeped with the given resolution. Results are saved into CSV files.
 
 4. [**Read CSV files**](#read_csv_files): This example showcases how to read CSV files from a given folder. The data is loaded into a pandas dataframe. Different statistics and data manipulation can be done with the dataframe.
+
+5. [**Create plots**](#create_plots): This example is about creating simple 1D plots using the simulation.
 
 <a name="python_basics"/>
 
@@ -180,280 +182,309 @@ datas.data
 1
 ~~~
 
-This code is also included in *diffeq.py*. Other features of the dictionary is not affected. Most of my codes uses the dot notation. Note, that this makes the dictionaries a bit slower. Also, multiprocessing.Pool() doesn't like dotdicts.
+This code is also included in *full_bubble_mode.py*. Other features of the dictionary is not affected. Most of my codes uses the dot notation. Note, that this makes the dictionaries a bit slower. Also, multiprocessing.Pool() doesn't like dotdicts.
 
 <a name="the_simulation"/>
 
 ##  The simulation
 
-Example file: *full bubble model (diffeq).ipynb* <br>
+Example file: *full_bubble_mode.ipynb* <br>
 
-For import: *diffeq.py* <br>
+For import: *full_bubble_mode.py*, *parameters.py* <br>
 
-The mathematical model is detailed in *full bubble model (diffeq).ipynb*. This is a notebook, where each function has a little demo, and all the formulas are attached in markdown cells. In most editors, you can navigate the file with the markdown headers. Note, that notebooks can not be imported in other codes, therefore all the code cells are copied to *diffeq.py*. If you modify the notebook (.ipynb), make sure to copy the changes into the python file (.py).
+The mathematical model is detailed in *full_bubble_mode.ipynb*. This is a notebook, where each function has a little demo, and all the formulas are attached in markdown cells. In most editors, you can navigate the file with the markdown headers. Note, that notebooks can not be imported in other codes, therefore all the code cells are copied to *full_bubble_mode.py*. If you modify the notebook (.ipynb), make sure to copy the changes into the python file (.py).
 
-###  Parameters
+###  Parameters, automatic generation
 
-EZ MEG FOG VÁLTOZNI AZ AUTOMATA BEOLVASÁSSAL!!! <br>
-
-All the numerical constants and coefficents are stored in a seperate file. You can import this file and use it's variables:
+All the numerical constants and coefficients are stored in a separate file. This is an automatically generated file, always named *parameters.py*, and it's essential for the simulation. You can import this file and use it's variables:
 
 ~~~Python
-import chemkin_AR_HE as par
-par.R_g # universal gas constant
+import parameters as par
+par.model # get the name of the .inp file, that was used to create parameters.py
 ~~~
 
 ~~~
-8.31446
+chemkin_AR_HE
 ~~~
 
-Make sure, you don't change the variables in par in the code! If you import diffeq as de, you can acces the parameters, as de.par .
+Make sure, you don't change the variables in par in the code! If you `import full_bubble_model as de`, you can acces the parameters, as `de.par` . <br>
+You can automatically generate *parameters.py* from a .inp file, such as one from the *INP file examples* folder. To do this, you will need *inp_data_extractor.py* and *data.py*. In *data.py* you will find all constants missing from the .inp files, like molar masses and lambda values. For the generation, run the following code:
+
+~~~Python
+# Directory for .inp file:
+path = 'INP file examples\\chemkin_AR_HE.inp'   # always use \\ instead of \
+
+import inp_data_extractor as inp
+inp.extract(path)   # this command creates parameters.py, it owerwrites the existing one
+~~~
+
+The `inp.extract()` function might give you colored messages. The blue ones can be neglected, the yellow ones should be considered, but won't result in an error, but the red ones will cause errors, and must be investigated.
+
+Now you can `import parameters as par`. Note, that if you, or your code overwrites a file, you have to restart the kernel to see the changes. Alternatively, you can use `import importlib`, then you `import parameters as par`, and when you change the *parameters.py* file, you just have to run `importlib.reload(par)` to use the changes.
 
 ###  Control parameters
 
-The control parameters are strored in a dictionary for easier managing. (Not in the high performance part) An example of souch a dictionary:
+The control parameters are stored in a dictionary for easier managing. (Not in the high performance part) An example of such a dictionary:
 
 ~~~Python
-import diffeq as de
+import full_bubble_model as de
 
 cpar = de.dotdict(dict(
 	ID=0,
-	R_E=3e-6, # [m]
-	ratio=20.0, # [-]
-	P_inf=50e5, # [Pa]
+	R_E=1e-6, # [m]
+	ratio=5.0, # [-]
+	P_inf=25e5, # [Pa]
 	alfa_M=0.05, # [-]
 	T_inf=303.15, # [m]
-	surfactant=0.25, # [-]
+	surfactant=1.0, # [-]
+	gases=[de.par.index['AR']], # indexes of species in initial bubble
+    	fractions=[1.0], # molar fractions of species in initial bubble
 ))
 cpar.P_v = de.VapourPressure(cpar.T_inf) # [Pa]
-cpar.mu_L = de.Viscosity(T=cpar.T_inf) # [Pa*s]
+cpar.mu_L = de.Viscosity(cpar.T_inf) # [Pa*s]
 ~~~
 
-This cpar will be passed to most of the not JITted functions. Don't forget, that cpar most contain an ID number, and all 7 control parameters, including the saturated vapour pressure, which is calculated from the temperature, otherwise not independent.
+This cpar will be passed to most of the not JIT-ted functions. Don't forget, that cpar most contain an ID number, and all 10 control parameters, including the saturated vapour pressure and the viscosity of the liquid, which is calculated from the temperature, otherwise not independent. You can of course use a constant value for them. Note, that viscosity is also pressure dependent, which is neglected here, and this function only gives the viscosity of water.
 
 ###  Simulating
 
 You should start with
 
 ~~~Python
-import diffeq as de
+import full_bubble_model as de
 ~~~
 
 The most important functions: <br>
 
-* **plot(cpar, *t_int*, *n*, *base_name*)**: This funfction solves the differential equation, and plots it <br>
+* **plot(cpar, *t_int*, *n*, *base_name*, *LSODA_timeot*, *Radau_timeout*)**: This funfction solves the differential equation, and plots it <br>
 
-Arguments:
+	Arguments:
 
-* cpar
+	* cpar
 
-* t_int (optional): time interval, the default is [0, 1.0] seconds. Graphs will be plotted in this intervall, if you change it.
+	* t_int (optional): time interval, the default is [0, 1.0] seconds. Graphs will be plotted in this intervall, if you change it.
 
-* n (optional): how long should the plotted time interval be compared to the collapse time, default: 5 [-]
+	* n (optional): how long should the plotted time interval be compared to the collapse time, default: 5 [-]
 
-* base_name (optional): save plots as .png, default: don't save. Use base_name='plot' --> plot_1.png, plot_2.png. Use base_name='images/plot' to save into images folder. Using a folder for images is recommended. This folder have to be created manually
+	* base_name (optional): save plots as .png, default: don't save. Use `base_name='plot'` --> plot_1.png, plot_2.png. Use `base_name='images\\plot'` to save into images folder. Using a folder for images is recommended. This folder have to be created manually
 
-Returns: - <br>
+	* LSODA_timeout, Radau_timeout (optional): maximum time the different solvers are allowed to run. After timeout seconds, the solver will terminate, and return with an error code. The default is 30 [s] for LSODA and 300 [s] for Radau.
 
-Example:
+	Returns: - <br>
 
-~~~Python
-de.plot(cpar)
-~~~
+	Example:
 
-~~~
-succecfully solved with LSODA solver
-~~~
+	~~~Python
+	de.plot(cpar)
+	~~~
 
-![image](https://user-images.githubusercontent.com/42745647/209476530-2d066b51-919c-4747-8969-af3763e5999c.png)
+	~~~
+	succecfully solved with LSODA solver
+	~~~
+
+![image](https://user-images.githubusercontent.com/42745647/215813926-de63814e-8c04-4dbb-8e00-c65ee00e135b.png)
+![image](https://user-images.githubusercontent.com/42745647/215814012-e4f4cdd4-29c1-4420-8c0a-07d6bb9093fb.png)
 
 ~~~
 Control parameters:
-	ID = 0
-	R_E = 3.00 [um]
-	ratio = 20.00 [-]
-	P_inf = 50.00 [bar]
-	alfa_M = 0.05 [-]
-	T_inf = 30.00 [°C]
-	P_v = 4245.13 [Pa]
-	surfactant = 0.25 [bar]
+    ID = 11
+    R_E = 1.00 [um]
+    ratio = 5.00 [-]
+    P_inf = 25.00 [bar]
+    alfa_M = 0.05 [-]
+    T_inf = 30.00 [°C]
+    P_v = 4245.13 [Pa]
+    mu_L = 0.81 [mPa*s]
+    surfactant = 1.00 [-]
+    100% AR, 0% HE
 Simulation info:
-	error_code = 0
-	elapsed_time = 1.77 [s]
-	steps = 14920 [-]
+    error_code = 0
+    elapsed_time = 1.10 [s]
+    steps = 9539 [-]
 Final state:
-	R_final = 3.07 [um]; R_dot_final =9.218886127073536e-18 [m/s]; T_final = 303.15 [K]
-	n_H2 =1.131533482140633e-14 [mol]; n_O2 =5.613844012476124e-15 [mol]
-	Final molar concentrations: [mol/cm^3]
-		H: 1.0438444212257289e-24; H_2: 9.300065864055777e-05; O: 1.2342146154859568e-25; O_2: 4.614014511333239e-05;
-		OH: 1.3657228605487174e-25; H_2O: 1.6842204457213926e-06; N_2: -6.557087373162561e-28; HO_2: 3.850836132640751e-11;
-		H_2O_2: 7.203106513489704e-07; Ar: 0.0018468099725707447; He: 0.0; OH_{ex}: -1.8351199382955463e-53;
+    R_final = 1.01 [um];   R_dot_final =1.129169540508806e-17 [m/s];   T_final = 303.15 [K]
+    n_H2 =5.826818607281378e-17 [mol]; n_O2 =2.864245341970364e-17 [mol]
+    Final molar concentrations: [mol/cm^3]
+        H: -4.994195859260988e-21;  H2: 1.3632275940074182e-05;  O: -3.4107975464517105e-15;  O2: 6.701115221438125e-06;  
+        OH: -1.0036204724547934e-19;  H2O: 1.6842204457612123e-06;  N2: 0.0;  HO2: -2.4113237248546457e-11;  
+        H2O2: 2.300816704644442e-07;  AR: 0.0010263315529529951;  HE: 0.0;  OHEX: 8.056090647320269e-45;  
+        
 Results:
-	collapse_time = 8.007919977859432e-07 [s]
-	T_max = 4104.54 [K]
-	expansion work = 4.515209424703302e-06 [J]
-	hydrogen production = 199517.27 [MJ/kg]
+    collapse_time = 9.422505710336362e-08 [s]
+    T_max = 4048.15 [K]
+    expansion work = 1.264638360255316e-09 [J]
+    hydrogen production = 10766.07 [MJ/kg]
 ~~~
 
-* **solve(cpar, *t_int*)**: This funfction solves the differential equation, and returns the numerical solution. Use, if you want to use the numerical solution itself. <br>
+* **solve(cpar, *t_int, LSODA_timeout, Radau_timeout*)**: This funfction solves the differential equation, and returns the numerical solution. Use, if you want to get the numerical solution itself for further investigations. <br>
 
-Arguments:
+	Arguments:
 
-* cpar
+	* cpar
 
-* t_int (optional): time interval, the default is [0, 1.0] seconds.
+	* t_int (optional): time interval, the default is [0, 1.0] seconds.
 
-Returns:
+	* LSODA_timeout, Radau_timeout (optional): maximum time the different solvers are allowed to run. After timeout seconds, the solver will terminate, and return with an error code. The default is 30 [s] for LSODA and 300 [s] for Radau.
 
-* num_sol: an object containing the numerical solutions. Time is stored in array num_sol.t, the solution in array num_sol.y
+	Returns:
 
-* error_code: a number from 0 to 4. If 3 or 4, the solver wasn't succesful.
+	* num_sol: an object containing the numerical solutions. Time is stored in array num_sol.t, the solution in array num_sol.y
 
-Example:
+	* error_code: a number from 0 to 6. If 4 or greater, the solvers weren't succesful.
 
-~~~Python
-num_sol, error_code, elapsed_time = de.solve(cpar)
-~~~
+	* elapsed_time: total runtime of the function in seconds.
+
+	Example:
+
+	~~~Python
+	num_sol, error_code, elapsed_time = de.solve(cpar)
+	~~~
 
 * **get_data(cpar, num_sol, error_code, elapsed_time)**: This function gets the numerical solution and the control parameters, and returns some datas about the simulation. <br>
 
-Arguments:
+	Arguments:
 
-* cpar
+	* cpar
 
-* num_sol: from solve()
+	* num_sol: from solve()
 
-* error_code: from solve()
+	* error_code: from solve()
 
-* elapsed_time: from solve()
+	* elapsed_time: from solve()
 
-Returns: A dictionary containing several inforamtions about the simulation, souch as the control parameters, error code, final results.
+	Returns: A dictionary containing several inforamtions about the simulation, souch as the control parameters, error code, final results.
 
-Example:
+	Example:
 
-~~~Python
-data = de.get_data(cpar, num_sol, error_code, elapsed_time)
-data
-~~~
+	~~~Python
+	data = de.get_data(cpar, num_sol, error_code, elapsed_time)
+	data
+	~~~
 
-~~~
-{'ID': 0,
-'R_E': 3e-06,
-'ratio': 20.0,
-'P_inf': 5000000.0,
-'alfa_M': 0.05,
-'T_inf': 303.15,
-'P_v': 4245.12571625229,
-'surfactant': 0.25,
-'error_code': 0,
-'elapsed_time': 1.75,
-'steps': 14920,
-'collapse_time': 8.007919977859432e-07,
-'T_max': 4104.537031649485,
-'x_final': array([ 3.07395561e-06, 9.21888613e-18, 3.03150000e+02, 1.04384442e-24,
-9.30006586e-05, 1.23421462e-25, 4.61401451e-05, 1.36572286e-25,
-1.68422045e-06, -6.55708737e-28, 3.85083613e-11, 7.20310651e-07,
-1.84680997e-03, 0.00000000e+00, -1.83511994e-53]),
-'n_H2': 1.131533482140633e-14,
-'n_O2': 5.613844012476124e-15,
-'work': 4.515209424703302e-06,
-'energy': 199517.2699689556}
-~~~
+	~~~
+	{'ID': 0,
+	 'R_E': 3e-06,
+	 'ratio': 20.0,
+	 'P_inf': 5000000.0,
+	 'alfa_M': 0.05,
+	 'T_inf': 303.15,
+	 'P_v': 4245.12571625229,
+	 'mu_L': 0.0008148611589373901,
+	 'surfactant': 0.25,
+	 'gases': [3],
+	 'fractions': [1.0],
+	 'error_code': 0,
+	 'elapsed_time': 2.483180046081543,
+	 'steps': 17628,
+	 'collapse_time': 8.006066235613211e-07,
+	 'T_max': 3218.745891558094,
+	 'x_final': array([ 3.00142939e-06,  3.25564626e-17,  3.03150000e+02,  1.05099081e-33,
+			            8.78391179e-08,  4.66028275e-31,  1.98129278e-03,  2.46247464e-31,
+			            1.68422045e-06,  0.00000000e+00,  5.89285538e-12,  5.40273169e-06,
+			            0.00000000e+00,  0.00000000e+00, -2.25892096e-71]),
+	 'n_H2': 9.9485770654553e-18,
+	 'n_O2': 2.2439938309400862e-13,
+	 'work': 4.515209424703302e-06,
+	 'energy': 225133087.80139184}
+	~~~
 
-* **print_data(data)**: This function prints the data dictionary in an organised way. <br>
+* **print_data(data, *print_it*)**: This function prints the data dictionary in an organised way. <br>
 
-Arguments:
+	Arguments:
 
-* data: from get_data()
+	* data: from get_data()
 
-Returns: - <br>
+	* print_it (optional): Default is True, in this case, the function prints the text to the console. If set to False, the function will return the text, and won't print anything.
 
-Example:
+	Returns: - <br>
 
-~~~Python
-de.print_data(data)
-~~~
+	Example:
 
-~~~
-Control parameters:
-	ID = 0
-	R_E = 3.00 [um]
-	ratio = 20.00 [-]
-	P_inf = 50.00 [bar]
-	alfa_M = 0.05 [-]
-	T_inf = 30.00 [°C]
-	P_v = 4245.13 [Pa]
-	surfactant = 0.25 [bar]
-Simulation info:
-	error_code = 0
-	elapsed_time = 1.80 [s]
-	steps = 14920 [-]
-Final state:
-	R_final = 3.07 [um]; R_dot_final =9.218886127073536e-18 [m/s]; T_final = 303.15 [K]
-	n_H2 =1.131533482140633e-14 [mol]; n_O2 =5.613844012476124e-15 [mol]
-	Final molar concentrations: [mol/cm^3]
-		H: 1.0438444212257289e-24; H_2: 9.300065864055777e-05; O: 1.2342146154859568e-25; O_2: 4.614014511333239e-05;
-		OH: 1.3657228605487174e-25; H_2O: 1.6842204457213926e-06; N_2: -6.557087373162561e-28; HO_2: 3.850836132640751e-11;
-		H_2O_2: 7.203106513489704e-07; Ar: 0.0018468099725707447; He: 0.0; OH_{ex}: -1.8351199382955463e-53;
-Results:
-	collapse_time = 8.007919977859432e-07 [s]
-	T_max = 4104.54 [K]
-	expansion work = 4.515209424703302e-06 [J]
-	hydrogen production = 199517.27 [MJ/kg]
-~~~
+	~~~Python
+	de.print_data(data)
+	~~~
 
-* **simulate(cpar, *t_int*)**: This function runs solve() and getData(), then returns with data. Both the input and the output is (or can be) a normal dictionary. This function is used in the bruteforce parameter sweep for multithreading. <br>
+	~~~
+	Control parameters:
+	    ID = 0
+	    R_E = 3.00 [um]
+	    ratio = 20.00 [-]
+	    P_inf = 50.00 [bar]
+	    alfa_M = 0.05 [-]
+	    T_inf = 30.00 [°C]
+	    P_v = 4245.13 [Pa]
+	    mu_L = 0.81 [mPa*s]
+	    surfactant = 0.25 [-]
+	    100% O2
+	Simulation info:
+	    error_code = 0
+	    elapsed_time = 2.48 [s]
+	    steps = 17628 [-]
+	Final state:
+	    R_final = 3.00 [um];   R_dot_final =3.255646260115485e-17 [m/s];   T_final = 303.15 [K]
+	    n_H2 =9.9485770654553e-18 [mol]; n_O2 =2.2439938309400862e-13 [mol]
+	    Final molar concentrations: [mol/cm^3]
+	        H: 1.0509908121293901e-33;  H2: 8.783911792457889e-08;  O: 4.660282747441842e-31;  O2: 0.0019812927762544595;  
+	        OH: 2.4624746417526286e-31;  H2O: 1.6842204457221403e-06;  N2: 0.0;  HO2: 5.892855382810517e-12;  
+	        H2O2: 5.402731685915859e-06;  AR: 0.0;  HE: 0.0;  OHEX: -2.2589209631942755e-71;  
+	        
+	Results:
+	    collapse_time = 8.006066235613211e-07 [s]
+	    T_max = 3218.75 [K]
+	    expansion work = 4.515209424703302e-06 [J]
+	    hydrogen production = 225133087.80 [MJ/kg]
+	~~~
 
-Arguments:
+* **simulate(kwargs)**: This function runs solve() and get_data(), then returns with data. Both the input and the output is (or can be) a normal dictionary. This function is used for multithreading in the bruteforce parameter sweep and in other examples. <br>
 
-* cpar (normal dictionary, not dotdict)
+	Arguments:
 
-* t_int (optional): time interval, the default is [0, 1.0] seconds.
+	* kwargs: a dictionary containing all the keyword arguments, you would pass to `solve()`.
 
-Returns:
+	Returns:
 
-* data: same, as in get_data(), but normal dictionary
+	* data: same, as in get_data(), but normal dictionary
 
-Example:
+	Example:
 
-~~~Python
-data = de.simulate(cpar)
-~~~
+	~~~Python
+	data = de.simulate( dict(cpar=cpar, t_int=np.array([0.0, 1.0])) )
+	~~~
 
 * **Make_dir**: class for saving things into CSV files. To use, first run:
 
-~~~ Python
-file = de.Make_dir('test')
-~~~
+	~~~ Python
+	file = de.Make_dir('test')
+	~~~
 
-This will create a folder called test, or use the existing one. Inside the folder, you can create a new, automatically numbered CSV file with a header:
+	This will create a folder called test, or use the existing one. Inside the folder, you can create a new, automatically numbered CSV file with a header:
 
-~~~ Python
-file.new_file()
-~~~
+	~~~ Python
+	file.new_file()
+	~~~
 
-The default name is *output_1.csv* with the number automatically incrementing itself. You can add a new line and store results:
+	The default name is *output_1.csv* with the number automatically incrementing itself. You can add a new line and store results:
 
-~~~Python
-data = de.simulate(cpar)
-file.write_line(data)
-~~~
+	~~~Python
+	data = de.simulate(cpar)
+	file.write_line(data)
+	~~~
 
-You can close the CSV to save it:
+	You can close the CSV to save it:
 
-~~~Python
-file.close()
-~~~
+	~~~Python
+	file.close()
+	~~~
 
-You can also save the numerical solution:
+	You can also save the numerical solution:
 
-~~~Python
-num_sol, error_code, elapsed_time = de.solve(cpar)
-data = de.get_data(cpar, num_sol, error_code, elapsed_time)
-file.write_solution(data, num_sol, 'testfile')
-~~~
+	~~~Python
+	num_sol, error_code, elapsed_time = de.solve(cpar)
+	data = de.get_data(cpar, num_sol, error_code, elapsed_time)
+	file.write_solution(data, num_sol, 'testfile')
+	~~~
 
-Two files will be created in the *test* folder. *testfile_data.csv* contains the data dictionary, while *testfile_num_sol.csv* contains the numerical solution. This function is independent of new_file() and close().
+	Two files will be created in the *test* folder. *testfile_data.csv* contains the data dictionary, while *testfile_num_sol.csv* contains the numerical solution. This function is independent of new_file() and close().
 
 <a name="bruteforce_parameter_sweep"/>
 
@@ -461,10 +492,116 @@ Two files will be created in the *test* folder. *testfile_data.csv* contains the
 
 Example file: *bruteforce parameter sweep.ipynb* <br>
 
+For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a .inp file <br>
+
+In this example, you can create a parameter study. You give a list for all control parameters, containing all their possible values. Then the program makes a long list of all the possible combinations. Affterward importing [multiprocessing](https://docs.python.org/3/library/multiprocessing.html#using-a-pool-of-workers), you can solve the simulation for all combinations using all your computer cores. (e.g. R_E=[1, 2, 3, 4] [um]; expansion ratio=[5, 10, 15, 20] [-] --> total 4*4=16 combinations) <br>
+
+For a very simple example of multiprocessing, create a new file, called *add.py*. Inside create a function, that adds the first 2 elements of a list, but very slowly:
+
+~~~Python
+def add(inp):
+    time.sleep(1)   # make it slow
+    return inp[0]+inp[1]
+~~~
+
+Then in a new notebook copy this:
+
+~~~Python
+from add import add
+from multiprocessing import Pool
+
+# possible parameter values:
+range1 = [1, 2, 3, 4]
+range2 = [1, 2, 3, 4]
+
+# all combinations:
+combinations = []
+for par1 in range1:
+    for par2 in range2:
+        combinations.append([par1, par2])
+        
+# run all combinations using multiprocessing instead of a for loop:
+sums = []
+with Pool() as pool:
+    results = pool.imap(add, combinations)
+    
+    for result in results:   # process the results
+        sums.append(result)
+        
+sums
+~~~
+
+~~~
+[2, 3, 4, 5, 3, 4, 5, 6, 4, 5, 6, 7, 5, 6, 7, 8]
+~~~
+
+Normally, using a for loop, it would take 16 seconds to run all the combinations, but using all your cpu threads, you can get it done much faster. The example might seem a bit more complicated, but the core mechanic is the same. The examlpe uses pool.imap_unordered, instead of pool.imap to get result faster, but in arbitrary order. The example uses the Make_dir class to save the results to .csv files.
+
 <a name="read_csv_files"/>
 
 ##  Read CSV files
 
 Example file: *read csv files.ipynb* <br>
 
-[pandas](https://pandas.pydata.org/docs/)
+For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a .inp file <br>
+
+After running a parameter study, you will have several .csv files with the results. This example uses [pandas](https://pandas.pydata.org/docs/), a popular data science library. The program lists and loads all csv files from the given folder into a dataframe, and makes some data manipulations, like filtering solutions, and also gets some statistics. <br>
+
+You can create a pandas dataframe from a CSV: `df=pandas.read_csv('example.csv')`, or from a dictionary using `df=pandas.DataFrame(example_dict)`:
+
+~~~Python
+import pandas as pd
+
+df = pd.DataFrame(dict(num=[1, 2], name=['one', 'two']))
+print(df)
+~~~
+
+~~~
+   num name
+0    1  one
+1    2  two
+~~~
+
+The most basic data manipulation is adding new rows or columns:
+
+~~~Python
+# add new row:
+new_row = pd.DataFrame(dict(num=[3], name=['three']))
+df = pd.concat([df, new_row]).reset_index(drop=True)
+
+# create a new column:
+df['square'] = df['num']**2
+
+print(df)
+~~~
+
+~~~
+   num   name  square
+0    1    one       1
+1    2    two       4
+2    3  three       9
+~~~
+
+An other very important tool is filtering a dataframe. Here we don't like the number two. To filter by multiple conditions, use bitwise and (&) / or (|):
+
+~~~Python
+print(df.loc[ (df['num']!=2) & (df['name']!='two') ])
+~~~
+
+~~~
+   num   name  square
+0    1    one       1
+2    3  three       9
+~~~
+
+<a name="create_plots"/>
+
+## Create plots
+
+Example file: *create plots.ipynb* <br>
+
+For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a .inp file <br>
+
+![image](https://user-images.githubusercontent.com/42745647/215842722-d057eefe-c54f-4046-ab8d-02a80ab171ef.png)
+
+This example shows you how to create simple plots with matplotlib.pyplot, like the one above.
