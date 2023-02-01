@@ -30,7 +30,7 @@ Then you should install [pip](https://pip.pypa.io/en/stable/installation/). You 
 
 You may start by the following installations:
 ~~~
-pip install numpy matplotlib scipy numba func_timeout importlib multiprocessing pandas termcolor
+pip install numpy matplotlib scipy numba func_timeout importlib pandas termcolor
 ~~~
 
 Finally you need to choose one of the several IDEs available. The most popular choice is [Visual Studio Code](https://code.visualstudio.com/download). An alternative is Jupyter Lab. You can downlad the new [desktop version](https://jupyter.org/), or download [Anaconda](https://www.anaconda.com/products/distribution), and launch it from the Anaconda Prompt by typing `jupyter lab`. This way only one drive will be avalible. Launch with `jupyter lab --notebook-dir=F:/` to change to *F* drive.
