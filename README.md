@@ -3,8 +3,10 @@
 Tutorial video: [Magyar](https://youtu.be/YWsT1ktUzVw), [English]()
 
 Author: Kozák Áron
-Budapest University of Technology and Economics
+
+Budapest University of Technology and Economics, 
 Department of Hydrodynamic Systems
+
 email: kozi0223@gmail.com
 
 ## Table of content
