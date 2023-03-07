@@ -1,6 +1,13 @@
-
-
 #  Bubble_dynamics_simulation
+
+Tutorial video: [Magyar](https://youtu.be/YWsT1ktUzVw), [English]()
+
+Author: Kozák Áron
+Budapest University of Technology and Economics
+Department of Hydrodynamic Systems
+email: kozi0223@gmail.com
+
+## Table of content
 
 1. [**Python basics**](#python_basics): Feel free to skip this part. Helps with installations, briefly introduces some special python construct, and links tutorials. Might be helpful, if you are new to python.
 
@@ -22,7 +29,7 @@ Feel free to skip this part. If you are absolutely new to python, you may start 
 
 First download the newest version of [Python](https://www.python.org/downloads/), and make sure you check the *Add python.exe to PATH* box. Open a command prompt, and try the `python --version` command.
 
-Then you should install [pip](https://pip.pypa.io/en/stable/installation/). You may use `python -m ensurepip --upgrade` command. Pip is used to install packages/libraries. You can run pip commands in a python notebook's code cell with an exclamation mark (`!pip...`). Basic commands:
+Then check that [pip](https://pip.pypa.io/en/stable/installation/) was automatically installed with `pip --version`. If not, you may use `python -m ensurepip --upgrade` command. Pip is used to install packages/libraries. You can run pip commands in a python notebook's code cell with an exclamation mark (`!pip...`). Basic commands:
 * install: `pip install <package_name>`
 * uninstall: `pip uninstall <package_name>`
 * upgrade version: `pip install <package_name> --upgrade`
@@ -30,7 +37,7 @@ Then you should install [pip](https://pip.pypa.io/en/stable/installation/). You 
 
 You may start by the following installations:
 ~~~
-pip install numpy matplotlib scipy numba func_timeout importlib pandas termcolor
+pip install numpy matplotlib scipy numba func_timeout pandas termcolor
 ~~~
 
 Finally you need to choose one of the several IDEs available. The most popular choice is [Visual Studio Code](https://code.visualstudio.com/download). An alternative is Jupyter Lab. You can downlad the new [desktop version](https://jupyter.org/), or download [Anaconda](https://www.anaconda.com/products/distribution), and launch it from the Anaconda Prompt by typing `jupyter lab`. This way only one drive will be avalible. Launch with `jupyter lab --notebook-dir=F:/` to change to *F* drive.
@@ -195,6 +202,8 @@ For import: *full_bubble_mode.py*, *parameters.py* <br>
 The mathematical model is detailed in *full_bubble_mode.ipynb*. This is a notebook, where each function has a little demo, and all the formulas are attached in markdown cells. In most editors, you can navigate the file with the markdown headers. Note, that notebooks can not be imported in other codes, therefore all the code cells are copied to *full_bubble_mode.py*. If you modify the notebook (.ipynb), make sure to copy the changes into the python file (.py).
 
 ###  Parameters, automatic generation
+
+For import: *_inp_data_extractor.py*, *data.py*, a *.inp* file <br>
 
 All the numerical constants and coefficients are stored in a separate file. This is an automatically generated file, always named *parameters.py*, and it's essential for the simulation. You can import this file and use it's variables:
 
@@ -492,7 +501,7 @@ Results:
 
 Example file: *bruteforce parameter sweep.ipynb* <br>
 
-For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a .inp file <br>
+For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a *.inp* file <br>
 
 In this example, you can create a parameter study. You give a list for all control parameters, containing all their possible values. Then the program makes a long list of all the possible combinations. Affterward importing [multiprocessing](https://docs.python.org/3/library/multiprocessing.html#using-a-pool-of-workers), you can solve the simulation for all combinations using all your computer cores. (e.g. R_E=[1, 2, 3, 4] [um]; expansion ratio=[5, 10, 15, 20] [-] --> total 4*4=16 combinations) <br>
 
@@ -543,7 +552,7 @@ Normally, using a for loop, it would take 16 seconds to run all the combinations
 
 Example file: *read csv files.ipynb* <br>
 
-For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a .inp file <br>
+For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a *.inp* file <br>
 
 After running a parameter study, you will have several .csv files with the results. This example uses [pandas](https://pandas.pydata.org/docs/), a popular data science library. The program lists and loads all csv files from the given folder into a dataframe, and makes some data manipulations, like filtering solutions, and also gets some statistics. <br>
 
@@ -600,7 +609,7 @@ print(df.loc[ (df['num']!=2) & (df['name']!='two') ])
 
 Example file: *create plots.ipynb* <br>
 
-For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a .inp file <br>
+For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a *.inp* file <br>
 
 ![image](https://user-images.githubusercontent.com/42745647/215842722-d057eefe-c54f-4046-ab8d-02a80ab171ef.png)
 
