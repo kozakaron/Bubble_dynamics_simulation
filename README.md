@@ -29,7 +29,7 @@ Feel free to skip this part. If you are absolutely new to python, you may start 
 
 ### Installing python
 
-First download the newest version of [Python](https://www.python.org/downloads/), and make sure you check the *Add python.exe to PATH* box. Open a command prompt, and try the `python --version` command.
+First download [Python](https://www.python.org/downloads/), and make sure you, that you install a version compatible with [numba](https://numba.readthedocs.io/en/stable/user/installing.html). Don't forget to check the *Add python.exe to PATH* box in the installation dialogue. Open a command prompt, and try the `python --version` command.
 
 Then check that [pip](https://pip.pypa.io/en/stable/installation/) was automatically installed with `pip --version`. If not, you may use `python -m ensurepip --upgrade` command. Pip is used to install packages/libraries. You can run pip commands in a python notebook's code cell with an exclamation mark (`!pip...`). Basic commands:
 * install: `pip install <package_name>`
