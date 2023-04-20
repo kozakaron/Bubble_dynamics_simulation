@@ -21,6 +21,8 @@ email: kozi0223@gmail.com
 
 5. [**Create plots**](#create_plots): This example is about creating simple 1D plots using the simulation.
 
+6. [**Pattern search**](#pattern_search): This example showcases a global optimazition algorithm. It is way faster than a bruteforce parameter sweep. Pattern search is also pretty simple and is easy to use.
+
 <a name="python_basics"/>
 
 ##  Python basics
@@ -501,6 +503,9 @@ Results:
 
 ##  Bruteforce parameter sweep
 
+![bruteforce parameter sweep](https://user-images.githubusercontent.com/42745647/233303101-d134fa9c-799a-4956-a425-e5afc498ea8e.png)
+*Visualization of a bruteforce parameter sweep in 2 dimensions.*
+
 Example file: *bruteforce parameter sweep.ipynb* <br>
 
 For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a *.inp* file <br>
@@ -616,3 +621,30 @@ For import: *full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a *.inp* 
 ![image](https://user-images.githubusercontent.com/42745647/215842722-d057eefe-c54f-4046-ab8d-02a80ab171ef.png)
 
 This example shows you how to create simple plots with matplotlib.pyplot, like the one above.
+
+<a name="pattern_search"/>
+
+##  Pattern search
+
+![pattern_search](https://user-images.githubusercontent.com/42745647/233303688-03e053f5-a555-4293-9c1c-ea1575e6f0d6.png)
+*Visualizatin of pattern search in 2 dimensions.*
+
+Example file: *pattern search.ipynb* <br>
+
+For import: *pattern_search.py*, full_bubble_mode.py*, *inp_data_extractor.py*, *data.py*, a *.inp* file <br>
+
+The algorithm can minimize any number that is provided in tha data dictionary returned by the get_data() function. The key of the value to be minimized can be given as
+~~~Python
+to_optimize = 'energy'   # key in data from de.get_data()
+~~~
+
+Then in the dictionary called ranges, you can set a range for all control parameters (except gases and fractions), souch as `R_E = [0.5e-6, 20e-6]`. Now the min value for R_E is 0.5 um, and the maximal value will be 20 um. If you don't want to change a control parameter, you can set a fixed value as `R_E = [5.0e-6]`. Now R_E will be 5 um, and the algorithm won't optimize it.
+
+Finally You can set, how many searches to run:
+~~~Python
+searches = 100    # number os total searches
+~~~
+Remember, that a search will converge to the nearest local minimum, that's why you need multiple. A search may include several simulations, so you may need to wait for the first results to be displayed. The searches are independent, so you can sut down the program, before it finishes. After each searc, the simulations will be saved to a csv file in the folder given in `file = ps.de.Make_dir('test 1')`.
+
+When all the searches are finished, some plots can be poltted to help determine, how well did the algorithm converge. In the dictionary named kwargs_list, you can set additional options. Timeouts and t_int can be changed for the solver, and the pattern search algorithm can be influenced by changing max_steps, first_step, min_step, decay. The defult values are recommended.
+
