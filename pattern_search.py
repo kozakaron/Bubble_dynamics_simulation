@@ -43,7 +43,7 @@ def evalvuate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout):
     cpar.P_v = de.VapourPressure(T=cpar.T_inf) # [Pa]
     cpar.mu_L = de.Viscosity(T=cpar.T_inf) # [Pa]
     num_sol, error_code, elapsed_time = de.solve(cpar, t_int, LSODA_timeout, Radau_timeout)   # simulation without plotting
-    data = de.get_data(point, num_sol, error_code, elapsed_time)   # post processing
+    data = de.get_data(cpar, num_sol, error_code, elapsed_time)   # post processing
     
     # return value to optimize
     output = data[to_optimize]
