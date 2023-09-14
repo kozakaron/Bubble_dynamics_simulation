@@ -3,7 +3,7 @@
 import numpy as np
 from termcolor import colored
 try:
-    import data
+    import full_bubble_model.data as data
     
 except:
     print(print(colored(f'Error, \'data.py\' not found', 'red')))

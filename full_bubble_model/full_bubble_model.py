@@ -29,6 +29,14 @@ class dotdict(dict):
     
 
 """________________________________Before the simulation________________________________"""
+
+enable_heat_transfer = True
+enable_evaporation = False
+enable_reactions = True
+def colorTF(boolean):
+    return colored(str(boolean), 'green') if boolean else colored(str(boolean), 'red')
+print(f'enable heat transfer: {colorTF(enable_heat_transfer)}\tenable evaporation: {colorTF(enable_evaporation)}\tenable reactions: {colorTF(enable_reactions)}')
+
 par.R_v=par.R_g/(2.0*par.W[par.index['H']]+par.W[par.index['O']])*1000.0 # [Pa]
 for j in range(3*len(par.PlogIndexes)):
     par.Plog[j][0] = par.Plog[j][0] * 1.0e5 # [bar] -> [Pa]
@@ -292,11 +300,6 @@ def ProductionRate(T, H, S, c, P_amb, M):
 
 
 """________________________________Differential equation________________________________"""
-
-enable_heat_transfer = True
-enable_evaporation = False
-enable_reactions = True
-print('Enable heat transfer: '+str(enable_heat_transfer)+', enable evaporation: '+str(enable_evaporation)+', enable reactions: '+str(enable_reactions))
 
 @njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64))
 def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, freq1, freq2, pA1, pA2, theta_phase, c_L):   
