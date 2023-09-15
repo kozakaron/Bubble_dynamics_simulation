@@ -1,9 +1,6 @@
 # Python garbage
 *__pycache__
 *.ipynb_checkpoints
-*build
-*.egg-info
-*dist
 
 # Folders (keep here, whatever you don't want to push)
 parameter_studies/*
@@ -15,5 +12,4 @@ temp/*
 
 # Unwanted files
 *fkubicsek*
-
-#
+*test*
