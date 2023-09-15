@@ -1,12 +1,15 @@
 """________________________________Libraries________________________________"""
 
 import numpy as np
+import os
 from termcolor import colored
 try:
-    import full_bubble_model.data as data
-    
+    import data
 except:
+    import Bubble_dynamics_simulation.data as data
+else:
     print(print(colored(f'Error, \'data.py\' not found', 'red')))
+
 comment = '!'
 
 """________________________________Functions________________________________"""
@@ -560,7 +563,7 @@ def extract(path):
     try:
         file = open(path, 'r')
         text = file.read()
-        model = path.split('\\')[-1][:-4]
+        model = os.path.basename(path)[:-4]
     except:
         print(colored(f'Error, \'{path}\' not found', 'red'))
     
