@@ -685,19 +685,9 @@ def extract(path):
     text += f'PlogIndexes = np.array({print_array(PlogIndexes, 4)}, dtype=np.int64)\n'
     text += f'PlogCount = {len(PlogIndexes)}\n\n'
     text += f'# PLOG parameters\n'
-    text2 = f'Plog = np.array([\n#'+print_array(['P_1',  'A_1',  'b_1',  'E_1'],12)[1:-1]+'\n'
-    text2 = text2.replace("'", '')
-    text2 = text2.replace(",", ' ')
-    text += text2
-    for i in range(len(PlogIndexes)-1):
-        text += print_array(Plog[3*i], 10)+', '+str(f'#{PlogIndexes[i]:>2}. {reactions[PlogIndexes[i]]}')+'\n'
-        text += print_array(Plog[3*i+1], 10)+', \n'
-        text += print_array(Plog[3*i+2], 10)+', \n'
-    if(len(PlogIndexes)>0):
-        text += print_array(Plog[3*len(PlogIndexes)-3], 10)+','+str(f' #{PlogIndexes[len(PlogIndexes)-1]:>2}. {reactions[PlogIndexes[len(PlogIndexes)-1]]}')+ '\n'
-        text += print_array(Plog[3*len(PlogIndexes)-2], 10)+', \n'
-        text += print_array(Plog[3*len(PlogIndexes)-1], 10)
-    text += '\n], dtype=np.float64)\n'
+    PlogComments = [f'{x:>2}. {reactions[x]}' for x in PlogIndexes]
+    PlogComments = sum([[x, '', ''] for x in PlogComments], []) # insert 2 empty lines after each comment
+    text += f'Plog = np.array(' + print_array(Plog, 18, PlogComments, ['P_1',  'A_1',  'b_1',  'E_1']) + ', dtype=np.float64)\n\n'
     
     text = text.replace('\t', '    ')
     file = open('parameters.py', 'w', encoding='utf8')
