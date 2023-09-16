@@ -41,10 +41,6 @@ def colorTF(boolean):
     return colored(str(boolean), 'green') if boolean else colored(str(boolean), 'red')
 print(f'enable heat transfer: {colorTF(enable_heat_transfer)}\tenable evaporation: {colorTF(enable_evaporation)}\tenable reactions: {colorTF(enable_reactions)}')
 
-par.R_v=par.R_g/(2.0*par.W[par.index['H']]+par.W[par.index['O']])*1000.0 # [Pa]
-for j in range(3*len(par.PlogIndexes)):
-    par.Plog[j][0] = par.Plog[j][0] * 1.0e5 # [bar] -> [Pa]
-
 @njit(float64(float64))
 def VapourPressure(T): # [K]
     T -= 273.15 # [°C]
