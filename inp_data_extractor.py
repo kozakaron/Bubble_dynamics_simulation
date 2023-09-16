@@ -1,3 +1,10 @@
+"""
+This program extracts data from .inp files and creates parameters.py
+Recommended usage:
+    importing: import inp_data_extractor as inp
+    usage: inp.extract(path)
+"""
+
 """________________________________Libraries________________________________"""
 
 import numpy as np
@@ -8,7 +15,7 @@ try:
 except:
     import Bubble_dynamics_simulation.data as data
 else:
-    print(print(colored(f'Error, \'data.py\' not found', 'red')))
+    print(colored(f'Error, \'data.py\' not found', 'red'))
 
 comment = '!'
 
@@ -532,7 +539,7 @@ def get_nu(reactions, species, W):
                 elif f == 'HV':
                     print(colored(f'Warning, photon (HV) in reaction {x} (\'{reactions[x]}\') is ignored', 'yellow'))
                 else:
-                    print(colored(f'Warning, \'{f}\' in reaction {x} (\'{reactions[x]}\') is not in species, the reaction is ignored', 'yellow'))
+                    print(colored(f'Warning, \'{f}\' in reaction {x} (\'{reactions[x]}\') is not in species, it is ignored', 'yellow'))
 
         for b in backward:
             num = 1
@@ -542,12 +549,12 @@ def get_nu(reactions, species, W):
             if b in species:
                 nu_backward[x][species.index(b)] += num
             else:
-                if f =='E':
+                if b =='E':
                     print(colored(f'Warning, electron (E) in reaction {x} (\'{reactions[x]}\') is ignored', 'yellow'))
-                elif f == 'HV':
+                elif b == 'HV':
                     print(colored(f'Warning, photon (HV) in reaction {x} (\'{reactions[x]}\') is ignored', 'yellow'))
                 else:
-                    print(colored(f'Warning, \'{f}\' in reaction {x} (\'{reactions[x]}\') is not in species, the reaction is ignored', 'yellow'))
+                    print(colored(f'Warning, \'{b}\' in reaction {x} (\'{reactions[x]}\') is not in species, it is ignored', 'yellow'))
 
     nu = nu_backward - nu_forward
     for i in range(0, len(reactions)):
@@ -614,7 +621,7 @@ def extract(path):
         elif i != len(species)-1:
             text += ', '
     text += '\n)\n'
-    text += f'indexOfWater = ' + str(species.index('H2O')) + '\n'
+    text += f'indexOfWater = ' + ( '-1' if not 'H2O' in species else str(species.index('H2O')) ) + '\n'
     text += f'K = {len(W)}   # Number of species\n\n'
     
     # NASA polynomials
