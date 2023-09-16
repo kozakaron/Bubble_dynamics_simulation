@@ -439,7 +439,7 @@ def get_reactions(lines, species):
     try:
         Plog = np.array(Plog)
     except:
-        Plog = [[]]
+        Plog = np.array([[]])
 
     if ReacConst == []: ReacConst = [[]]
     if Troe == []: Troe = [[]]
@@ -452,11 +452,13 @@ def get_reactions(lines, species):
     
   # Correct units
     i = find('REAC', lines)
+    if len(PlogIndexes) != 0: Plog[:, 0] *= 1.0e5   # convert bar to Pa
     if 'MOLEC' in lines[i]: # MOLECULE
         print(colored(f'Note, pre-exponential factor is modified from units of [cm^3/molecule/s] to [cm^3/mol/s]', 'blue'))
         A /= 6.02214e23
         if len(PressureDependentIndexes) != 0: ReacConst[:, 0] /= 6.02214e23
-        Plog[:, 1]  /= 6.02214e23
+        if len(PlogIndexes) != 0:
+            Plog[:, 1]  /= 6.02214e23
         # Avogadro's number: N_A = 6.02214e23 [-]
     elif 'MOL' in lines[i]:
         print(colored(f'Note, pre-exponential factor is modified from units of [cm^3/mol/s] to [cm^3/mol/s]', 'blue'))
@@ -598,7 +600,10 @@ def extract(path):
     text += f'model = \'{model}\'\n'
     text += f'import numpy as np\n'
     text += line_start + 'Physical constants' + line_end
-    text += data.physical_constants + '\n\n'
+    data.calculate_missing_constants()
+    for key, constant in data.physical_constants.items():
+        text += f'{key: <10} = {constant["value"]: <25}# {constant["comment"]}\n'
+    text += '\n'
     
     # Species and elements
     text += line_start + 'Species' + line_end

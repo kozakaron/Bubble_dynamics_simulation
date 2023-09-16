@@ -30,9 +30,13 @@ class dotdict(dict):
 
 """________________________________Before the simulation________________________________"""
 
+# set the parameters
 enable_heat_transfer = True
 enable_evaporation = False
 enable_reactions = True
+
+if par.indexOfWater == -1:
+    enable_evaporation = False
 def colorTF(boolean):
     return colored(str(boolean), 'green') if boolean else colored(str(boolean), 'red')
 print(f'enable heat transfer: {colorTF(enable_heat_transfer)}\tenable evaporation: {colorTF(enable_evaporation)}\tenable reactions: {colorTF(enable_reactions)}')
