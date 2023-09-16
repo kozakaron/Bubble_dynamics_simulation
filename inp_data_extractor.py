@@ -13,9 +13,10 @@ from termcolor import colored
 try:
     import data
 except:
-    import Bubble_dynamics_simulation.data as data
-else:
-    print(colored(f'Error, \'data.py\' not found', 'red'))
+    try:
+        import Bubble_dynamics_simulation.data as data
+    except:
+        print(colored(f'Error, \'data.py\' not found', 'red'))
 
 comment = '!'
 
@@ -437,6 +438,8 @@ def get_reactions(lines, species):
 
         
     try:
+        if len(Plog) == 0:
+            Plog.append([])
         Plog = np.array(Plog)
     except:
         Plog = np.array([[]])

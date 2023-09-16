@@ -62,7 +62,9 @@ def InitialCondition(cpar, evaporation=False):
     if type(cpar.fractions) != list:
         cpar.fractions = [cpar.fractions]
     if sum(cpar.fractions) != 1.0:
-        print(print(colored('Warning, in InitialCondition(), sum of cpar.fractions isn\'t 1.','yellow')));print(cpar.fractions)
+        print(print(colored(f'Warning, in InitialCondition(), sum of cpar.fractions isn\'t 1: {cpar.fractions}','yellow')))
+    if len(cpar.gases) != len(cpar.fractions):
+        print(print(colored(f'Warning, in InitialCondition(), len(cpar.gases) != len(cpar.fractions): {cpar.gases} != {cpar.fractions}','yellow')))
     IC = np.zeros((par.K+4), dtype=np.float64)
     R_0 = cpar.ratio * cpar.R_E
     
@@ -70,10 +72,10 @@ def InitialCondition(cpar, evaporation=False):
     p_E = cpar.P_amb + 2.0 * cpar.surfactant * par.sigma / cpar.R_E # [Pa]
     V_E = 4.0 / 3.0 * cpar.R_E**3 * np.pi # [m^3]
     p_gas = p_E - cpar.P_v if evaporation else p_E
-    negativepressure_error = False
+    lowpressure_error = False
     if p_gas < 0.0:
-        print('Error! The pressure of the gas is negative!')
-        negativepressure_error = True
+        print(colored('Error! The pressure of the gas is negative!', 'red'))
+        lowpressure_error = True
     n_gas = p_gas * V_E / (par.R_g * cpar.T_inf) # [mol]
     
     # Isotermic expansion
@@ -81,16 +83,21 @@ def InitialCondition(cpar, evaporation=False):
     n_H2O = cpar.P_v * V_0 / (par.R_g * cpar.T_inf) if evaporation else 0.0 # [mol]
     c_H2O = n_H2O / V_0    # [mol/m^3]
     c_gas = n_gas / V_0    # [mol/m^3]
+    p_gas = c_gas * par.R_g * cpar.T_inf # [Pa]
+    if p_gas < cpar.P_v:
+        print(colored('Warning! The pressure during the expansion is lower, than the saturated water pressure', 'yellow'))
+        lowpressure_error = True
 
     # Initial conditions
     IC[0] = R_0   # R_0 [m]
     IC[1] = 0.0    # dRdt_0 [m/s]
     IC[2] = cpar.T_inf   # T_0 [K]
-    IC[3 + par.index['H2O']] = c_H2O * 1.0e-6    # [mol/cm^3]
+    if evaporation and cpar.indexOfWater != -1:
+        IC[3 + par.index['H2O']] = c_H2O * 1.0e-6    # [mol/cm^3]
     for index, fraction in zip(cpar.gases, cpar.fractions):
         IC[3 + index] = fraction * c_gas * 1.0e-6    # [mol/cm^3]
     IC[3 + par.K] = 0.0 #dissipated acoustic energy [J]
-    return IC,negativepressure_error
+    return IC, lowpressure_error
 
 
 def Work(cpar, evaporation=False):
@@ -390,7 +397,9 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
         cpar.P_v = VapourPressure(T=cpar.T_inf) # [Pa]
     if not 'mu_L' in cpar:
         cpar.mu_L = Viscosity(T=cpar.T_inf) # [Pa]
-    IC,negativepressure_error = InitialCondition(cpar)
+    IC, lowpressure_error = InitialCondition(cpar, enable_evaporation)
+    if lowpressure_error:
+        return None, error_code, 0.0, lowpressure_error
     
     # solving d/dt x=f(t, x, cpar)
     try:
@@ -415,14 +424,14 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
     elapsed_time = (end - start)
     
     if error_code > 3:
-        return None, error_code, elapsed_time, negativepressure_error
-    return num_sol, error_code, elapsed_time, negativepressure_error
+        return None, error_code, elapsed_time, lowpressure_error
+    return num_sol, error_code, elapsed_time, lowpressure_error
 
 
 """________________________________Post processing________________________________"""
 
 # This function gets the numerical solution and the control parameters, and returns some datas about the simulation
-def get_data(cpar, num_sol, error_code, elapsed_time, negativepressure_error):
+def get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error):
     # copy cpar:
     data = dotdict(dict(
         ID=cpar.ID,
@@ -449,7 +458,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time, negativepressure_error):
     data.elapsed_time = elapsed_time # [s]
     
     # default values
-    if error_code > 3 or negativepressure_error:
+    if error_code > 3 or lowpressure_error:
         data.steps = 0
         loc_min = 0.0
         data.collapse_time = 0.0
@@ -478,14 +487,20 @@ def get_data(cpar, num_sol, error_code, elapsed_time, negativepressure_error):
         data.T_max = np.max(num_sol.y[:][2]) # maximum of temperature peaks [K]
         data.x_final = num_sol.y[:, -1] # final values of [R, R_dot, T, c_1, ... c_K]
         last_V = 4.0 / 3.0 * (100.0 * data.x_final[0]) ** 3 * np.pi # [cm^3]
-        data.n_H2 = data.x_final[3+par.index['H2']] * last_V # [mol]
-        data.n_O2 = data.x_final[3+par.index['O2']] * last_V # [mol]
-        data.n_NH3 = data.x_final[3+par.index['NH3']] * last_V # [mol]
-        m_H2 = 1.0e-3 * data.n_H2 * par.W[par.index['H2']] # [kg]
-        m_NH3 = 1.0e-3 * data.n_NH3 * par.W[par.index['NH3']] # [kg]
-        data.expansion_work = Work(cpar) # [J]
+        data.n_H2 = data.x_final[3+par.index['H2']] * last_V if 'H2' in par.species else 0.0 # [mol]
+        data.n_O2 = data.x_final[3+par.index['O2']] * last_V if 'O2' in par.species else 0.0 # [mol]
+        data.n_NH3 = data.x_final[3+par.index['NH3']] * last_V if 'NH3' in par.species else 0.0 # [mol]
+        m_H2 = 1.0e-3 * data.n_H2 * par.W[par.index['H2']] if 'H2' in par.species else 0.0 # [kg]
+        m_NH3 = 1.0e-3 * data.n_NH3 * par.W[par.index['NH3']] if 'NH3' in par.species else 0.0 # [kg]
+        data.expansion_work = Work(cpar, enable_evaporation) # [J]
         data.dissipated_acoustic_energy = data.x_final[-1]  # [J]
-        data.energy_efficiency = 1.0e-6 * (data.expansion_work+data.dissipated_acoustic_energy) / m_NH3 if cpar.pA1!=0.0 or cpar.pA2!=0.0 else 1.0e-6 * data.expansion_work / m_NH3 # [MJ/kg]
+        all_work = data.expansion_work + data.dissipated_acoustic_energy if cpar.pA1!=0.0 or cpar.pA2!=0.0 else data.expansion_work
+        if 'NH3' in par.species: # assume we produce ammonia
+            data.energy_efficiency = 1.0e-6 * all_work / m_NH3 # [MJ/kg]
+        elif 'H2' in par.species: # assume we produce hydrogen
+            data.energy_efficiency = 1.0e-6 * all_work / m_H2 # [MJ/kg]
+        else:
+            data.energy_efficiency = -1.0
     return data
 
 # keys of data: (except x_final)
@@ -529,7 +544,7 @@ def print_data(data, print_it=True):
     T_max ={data.T_max: .2f} [K]
     expansion work = {data.expansion_work} [J]
     dissipated acoustic energy = {data.dissipated_acoustic_energy} [J]
-    ammonia production ={data.energy_efficiency: .2f} [MJ/kg]'''
+    energy efficiency = {data.energy_efficiency} [MJ/kg]'''
     
     if print_it:
         print(text)
@@ -545,8 +560,8 @@ def simulate(kwargs):
         args[key] = kwargs[key]
     args = dotdict(args)
     cpar = dotdict(args.cpar)
-    num_sol, error_code, elapsed_time, negativepressure_error = solve(cpar, args.t_int, LSODA_timeout=args.LSODA_timeout, Radau_timeout=args.Radau_timeout)
-    data = get_data(cpar, num_sol, error_code, elapsed_time, negativepressure_error)
+    num_sol, error_code, elapsed_time, lowpressure_error = solve(cpar, args.t_int, LSODA_timeout=args.LSODA_timeout, Radau_timeout=args.Radau_timeout)
+    data = get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error)
     return dict(data)
 
 
@@ -565,19 +580,21 @@ def simulate(kwargs):
     # LSODA_timeout, Radau_timeout: timeout (maximum runtime) for different solvers in solve() in seconds
 def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30, Radau_timeout=300):
     
-    num_sol, error_code, elapsed_time, negativepressure_error = solve(cpar, t_int, LSODA_timeout, Radau_timeout)
-    data = get_data(cpar, num_sol, error_code, elapsed_time, negativepressure_error)
+    num_sol, error_code, elapsed_time, lowpressure_error = solve(cpar, t_int, LSODA_timeout, Radau_timeout)
+    data = get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error)
     
 # Error codes
-    if error_code == 0:
-        print(f'succecfully solved with LSODA solver')
-    if error_code == 1:
-        print(f'LSODA solver didn\'t converge, but Radau solver worked')
-    if error_code == 2:
-        print(f'LSODA solver timed out, but Radau solver worked')
-    if error_code == 3:
-        print(f'LSODA solver had a fatal error, but Radau solver worked')
+    if lowpressure_error:
+        print(print(colored(f'Low pressure error (NO SOLUTION!)','red')))
         return None
+    if error_code == 0:
+        print(colored(f'succecfully solved with LSODA solver', 'green'))
+    if error_code == 1:
+        print(colored(f'LSODA solver didn\'t converge, but Radau solver worked', 'green'))
+    if error_code == 2:
+        print(colored(f'LSODA solver timed out, but Radau solver worked', 'green'))
+    if error_code == 3:
+        print(colored(f'LSODA solver had a fatal error, but Radau solver worked', 'green'))
     if error_code == 4:
         print(print(colored(f'LSODA solver failed, Radau solver didn\'t converge (NO SOLUTION!)','red')))
         return None
