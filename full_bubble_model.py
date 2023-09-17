@@ -496,9 +496,9 @@ def get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error):
         data.dissipated_acoustic_energy = data.x_final[-1]  # [J]
         all_work = data.expansion_work + data.dissipated_acoustic_energy if cpar.pA1!=0.0 or cpar.pA2!=0.0 else data.expansion_work
         if 'NH3' in par.species: # assume we produce ammonia
-            data.energy_efficiency = 1.0e-6 * all_work / m_NH3 # [MJ/kg]
+            data.energy_efficiency = 1.0e-6 * all_work / m_NH3 if m_NH3 > 0.0 else 1.0e30 # [MJ/kg]
         elif 'H2' in par.species: # assume we produce hydrogen
-            data.energy_efficiency = 1.0e-6 * all_work / m_H2 # [MJ/kg]
+            data.energy_efficiency = 1.0e-6 * all_work / m_H2 if m_H2 > 0.0 else 1.0e30 # [MJ/kg]
         else:
             data.energy_efficiency = -1.0
     return data
@@ -536,7 +536,7 @@ def print_data(data, print_it=True):
     Final molar concentrations: [mol/cm^3]\n        '''
     
     for k, specie in enumerate(par.species):
-        text += f'{specie}: {data.x_final[3+k]};  '
+        text += f'{specie: <6}: {data.x_final[3+k]: 24};    '
         if (k+1) % 4 == 0: text += f'\n        '
     
     text += f'''\nResults:
@@ -664,12 +664,16 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     fig2 = plt.figure(figsize=(20, 9))
     ax = fig2.add_subplot(axisbelow=True)
 
-    plt.ylim([1e-23, 1e-11])
-    ax.set_yscale('log')
-    #O,    H,    H2,     OH,   O2,      H2O,   HO2, H2O2,   O3,  OH_ex
+    max_mol = np.max(n, axis=1) # maximum amounts of species [mol]
+    indexes_to_plot = np.argsort(max_mol)[-10:] if len(max_mol) >= 10 else np.argsort(max_mol) # Get the indexes of the 10 largest values
     for i, specie in enumerate(par.species):
-        ax.plot(t, n[i], label = '$' + specie + '$', linewidth = 1.0)
+        if i in indexes_to_plot:
+            ax.plot(t, n[i], label = '$' + specie + '$', linewidth = 2.0)
+        else:
+            ax.plot(t, n[i], linewidth = 1.0)
 
+    plt.ylim([1e-24, 5.0*max_mol[indexes_to_plot[-1]]])
+    ax.set_yscale('log')
     ax.set_xlabel('$t$ [s]')
     ax.set_ylabel('$n_k$ [mol]')
     ax.grid()
