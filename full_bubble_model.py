@@ -578,12 +578,13 @@ def simulate(kwargs):
     #            using a folder for images is recommend
     #            this folder have to be created manually
     # LSODA_timeout, Radau_timeout: timeout (maximum runtime) for different solvers in solve() in seconds
-def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30, Radau_timeout=300):
+    # presentation: if True, the plot will be in presentation mode (default: False)
+def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30, Radau_timeout=300, presentation=False):
     
     num_sol, error_code, elapsed_time, lowpressure_error = solve(cpar, t_int, LSODA_timeout, Radau_timeout)
     data = get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error)
     
-# Error codes
+# Print errors
     if lowpressure_error:
         print(print(colored(f'Low pressure error (NO SOLUTION!)','red')))
         return None
@@ -611,7 +612,10 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     else:
         end_index = np.where(num_sol.t > n * data.collapse_time)[0][0]
 
-    t = num_sol.t[:end_index] # [s]
+    if num_sol.t[end_index] < 1e-3:
+        t = num_sol.t[:end_index] * 1e6 # [us]
+    else:
+        t = num_sol.t[:end_index] * 1e3 # [ms]
     R = num_sol.y[0, :end_index] # [m]
     R_dot = num_sol.y[1, :end_index] # [m/s]
     T = num_sol.y[2, :end_index] # [K]
@@ -621,18 +625,22 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     n = c * V
 
 # plot R and T
-    plt.rcParams.update({'font.size': 18})
-    fig1 = plt.figure(figsize=(20, 6))
+    linewidth = 2.0 if presentation else 1.0
+    plt.rcParams.update({'font.size': 24 if presentation else 18})
+    fig1 = plt.figure(figsize=(16, 9) if presentation else (20, 6))
     ax1 = fig1.add_subplot(axisbelow=True)
     ax2 = ax1.twinx()
-    ax1.plot(t, R / cpar.R_E, color = 'b', linewidth = 1.0)
-    ax2.plot(t, T, color = 'r', linewidth = 1.0, linestyle = '-.')
+    ax1.plot(t, R / cpar.R_E, color = 'b', linewidth = linewidth)
+    ax2.plot(t, T, color = 'r', linewidth = linewidth, linestyle = '-.')
 
     ax1.set_ylabel('$y1$ [-]')
-    ax1.set_xlabel('$t$ [s]')
+    if num_sol.t[end_index] < 1e-3:
+        ax1.set_xlabel('$t$ [μs]')
+    else:
+        ax1.set_xlabel('$t$ [ms]')
     ax1.set_ylabel('$R/R_E$ [-]', color = 'b')
     ax2.set_ylabel('$T$ [K]', color = 'r')
-    ax1.grid()
+    if not presentation: ax1.grid()
     
 # textbox with initial conditions
     text = f"""Initial conditions:
@@ -649,35 +657,78 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     for gas, fraction in zip(cpar.gases, cpar.fractions):
         text += f'{int(100*fraction)}% {par.species[gas]}, ' 
     text = text[:-2]
-    ax1.text(
-        0.75, 0.95, # coordinates
-        text, transform=ax1.transAxes,
-        horizontalalignment='left', verticalalignment='top',
-        fontsize=16, fontstyle='oblique',
-        bbox={'facecolor': 'white', 'alpha': 1.0, 'pad': 10},
-    )
+    if not presentation:
+        ax1.text(
+            0.75, 0.95, # coordinates
+            text, transform=ax1.transAxes,
+            horizontalalignment='left', verticalalignment='top',
+            fontsize=16, fontstyle='oblique',
+            bbox={'facecolor': 'white', 'alpha': 1.0, 'pad': 10},
+        )
     
     plt.show()
 
 # plot reactions
-    plt.rcParams.update({'font.size': 18})
-    fig2 = plt.figure(figsize=(20, 9))
+    plt.rcParams.update({'font.size': 24 if presentation else 18})
+    fig2 = plt.figure(figsize=(16, 9) if presentation else (20, 9))
     ax = fig2.add_subplot(axisbelow=True)
 
-    max_mol = np.max(n, axis=1) # maximum amounts of species [mol]
+    # plot the lines
+        # use this to generate colors:
+            # import seaborn as sns
+            # colors = sns.color_palette('Set1', n_colors=10)
+            # print(colors.as_hex()); colors
+    colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffd92f', '#a65628', '#f781bf', '#999999', '#e41a1c']
+    color_index = 0
+    texts = []
+    max_mol = n[:, -1] #np.max(n, axis=1) # maximum amounts of species [mol]
     indexes_to_plot = np.argsort(max_mol)[-10:] if len(max_mol) >= 10 else np.argsort(max_mol) # Get the indexes of the 10 largest values
     for i, specie in enumerate(par.species):
+        name = specie
+        for digit in range(10): # turns 'H2O2' into 'H_2O_2'
+            name = name.replace(str(digit), '_' + str(digit))
         if i in indexes_to_plot:
-            ax.plot(t, n[i], label = '$' + specie + '$', linewidth = 2.0)
-        else:
-            ax.plot(t, n[i], linewidth = 1.0)
+            color = colors[color_index]
+            color_index = color_index + 1 if color_index < len(colors) - 1 else 0
+            linewidth = 2.0 if presentation and n[i, -1] > 1e-24 else 1.0
+            ax.plot(t, n[i], linewidth = linewidth, color=color, label = '$' + name + '$') # PLOT HERE
+            texts.append((color, name, n[i, -1]))            
+        elif not presentation:
+            linewidth = 2.0 if presentation else 1.0
+            ax.plot(t, n[i], linewidth = linewidth)  # PLOT HERE
 
+    # make legend
+    texts.sort(key=lambda x: x[-1], reverse=True)
+    last_n_final = 1.0e100
+    for text in texts:
+        color, name, n_final = text
+        # spaceing
+        if n_final < 1e-24: continue
+        limit = 5.0 if presentation else 3.0
+        if last_n_final / n_final < limit:
+            n_final = last_n_final / limit
+        last_n_final = n_final
+        # place text
+        ax.text(
+            t[-1],
+            n_final,
+            '$' + name + '$',
+            color=color,
+            fontsize=24 if presentation else 18,
+            verticalalignment='center',
+            bbox={'facecolor': 'white', 'pad': 0, 'linewidth': 0.0},
+        )
+
+    # plot settings
     plt.ylim([1e-24, 5.0*max_mol[indexes_to_plot[-1]]])
     ax.set_yscale('log')
-    ax.set_xlabel('$t$ [s]')
+    if num_sol.t[end_index] < 1e-3:
+        ax.set_xlabel('$t$ [μs]')
+    else:
+        ax.set_xlabel('$t$ [ms]')
     ax.set_ylabel('$n_k$ [mol]')
-    ax.grid()
-    ax.legend()
+    if not presentation: ax.grid()
+    #if not presentation: ax.legend()
 
     plt.show()
     
