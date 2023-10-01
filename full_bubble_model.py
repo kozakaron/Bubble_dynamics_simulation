@@ -16,9 +16,17 @@ import importlib   # for reloading your own files
 try:
     import parameters as par   # numeric constants and coefficents
     importlib.reload(par)   # reload changes you made
-    print(f'model: {par.model}')
 except:
     print(print(colored('Error, \'parameters.py\' not found','red')))
+try:
+    import excitation
+    importlib.reload(excitation)
+except:
+    try:
+        import Bubble_dynamics_simulation.excitation as excitation
+        importlib.reload(excitation)
+    except:
+        print(colored(f'Error, \'excitation.py\' not found', 'red'))
 
 # dot.notation access to dictionary attributes
 # instead of dictionary['key'] you can use dictionary.key
@@ -28,18 +36,29 @@ class dotdict(dict):
     __delattr__ = dict.__delitem__
     
 
+"""________________________________Settings________________________________"""
+
+enable_heat_transfer = True
+enable_evaporation = True
+enable_reactions = True
+enable_discipated_energy = True
+target_specie = 'H2' # Specie to calculate energy effiqiency
+excitation_type = 'sin_impulse' # function to calculate pressure excitation
+
 """________________________________Before the simulation________________________________"""
 
-# set the parameters
-enable_heat_transfer = True
-enable_evaporation = False
-enable_reactions = True
-
-if par.indexOfWater == -1:
-    enable_evaporation = False
 def colorTF(boolean):
     return colored(str(boolean), 'green') if boolean else colored(str(boolean), 'red')
-print(f'enable heat transfer: {colorTF(enable_heat_transfer)}\tenable evaporation: {colorTF(enable_evaporation)}\tenable reactions: {colorTF(enable_reactions)}')
+
+Excitation, excitation_args, excitation_units = excitation.getExcitation(excitation_type=excitation_type)
+if par.indexOfWater == -1:
+    enable_evaporation = False
+print(f'model: {par.model}')
+print(f'target specie: {target_specie}')
+print(f'excitation: {excitation_type} (control parameters: {excitation_args})')
+print(f'enable heat transfer: {colorTF(enable_heat_transfer)}\tenable evaporation: {colorTF(enable_evaporation)}\tenable reactions: {colorTF(enable_reactions)}\tenable discipated energy: {colorTF(enable_discipated_energy)}')
+if target_specie not in par.species:
+    print(colored(f'Error, target specie \'{target_specie}\' not found in parameters.py', 'red'))
 
 @njit(float64(float64))
 def VapourPressure(T): # [K]
@@ -84,7 +103,9 @@ def InitialCondition(cpar, evaporation=False):
     c_H2O = n_H2O / V_0    # [mol/m^3]
     c_gas = n_gas / V_0    # [mol/m^3]
     p_gas = c_gas * par.R_g * cpar.T_inf # [Pa]
-    if p_gas < cpar.P_v:
+    P_amb_min = cpar.P_v if evaporation else 0.0 # [Pa]
+    P_amb_min += p_gas - 2.0 * cpar.surfactant * par.sigma / R_0 # [Pa]
+    if P_amb_min < cpar.P_v:
         print(colored('Warning! The pressure during the expansion is lower, than the saturated water pressure', 'yellow'))
         lowpressure_error = True
 
@@ -124,10 +145,9 @@ def Work(cpar, evaporation=False):
 
 """________________________________Pressures________________________________"""
 
-@njit(float64[:](float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64))
-def Pressure(t, R, R_dot, T, T_dot, M, sum_omega_dot, P_amb, mu_L, surfactant, freq1, freq2, pA1, pA2, theta_phase):
-    p_Inf = P_amb + pA1*np.sin(2.0*np.pi*freq1*t) + pA2*np.sin(2.0*np.pi*freq2*t+theta_phase) 
-    p_Inf_dot = pA1*2.0*np.pi*freq1*np.cos(2.0*np.pi*freq1*t) + pA2*2.0*np.pi*freq2*np.cos(2.0*np.pi*freq2*t+theta_phase)
+@njit(float64[:](float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
+def Pressure(t, R, R_dot, T, T_dot, M, sum_omega_dot, mu_L, surfactant, P_amb, args):
+    p_Inf, p_Inf_dot = Excitation(t, P_amb, args)
     p = 0.1 * M * par.R_erg * T
     p_dot = p * (sum_omega_dot / M + T_dot / T - 3.0 * R_dot/R)
     p_L = p - (2.0 * surfactant * par.sigma + 4.0 * mu_L * R_dot) / R
@@ -308,8 +328,8 @@ def ProductionRate(T, H, S, c, P_amb, M):
 
 """________________________________Differential equation________________________________"""
 
-@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64))
-def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, freq1, freq2, pA1, pA2, theta_phase, c_L):   
+@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64[:]))
+def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, c_L, ex_args):   
     R = x[0]      # bubble radius [m]
     R_dot = x[1]  # [m/s]
     T = x[2]      # temperature [K]
@@ -357,8 +377,8 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, freq1, freq2, pA1, pA2,
     [delta, delta_dot, p_dot] = Pressure(t=t,
         R=R, R_dot=R_dot, T=T, T_dot=T_dot,
         M=M, sum_omega_dot=np.sum(omega_dot),
-        P_amb=P_amb, mu_L=mu_L, surfactant=surfactant,
-        freq1=freq1, freq2=freq2, pA1=pA1, pA2=pA2, theta_phase=theta_phase
+        mu_L=mu_L, surfactant=surfactant, P_amb=P_amb,
+        args=ex_args
     )   # delta = (p_L-P_amb) / rho_L
     
     Nom = (1.0 + R_dot / c_L) * delta + R / c_L * delta_dot - (1.5 - 0.5 * R_dot / c_L) * R_dot ** 2
@@ -366,8 +386,8 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, freq1, freq2, pA1, pA2,
     
     dxdt[1] = Nom / Den
     
-    if pA1!=0.0 or pA2!=0.0:
-        V_dot=4.0 * R * R * R_dot * np.pi;
+    if enable_discipated_energy:
+        V_dot=4.0 * R * R * R_dot * np.pi
         integrand_th = -(p * (1 + R_dot / c_L) + R / c_L * p_dot) * V_dot
         integrand_v = 16.0 * np.pi * mu_L * (R * R_dot*R_dot + R * R * R_dot * dxdt[1] / c_L)
         integrand_r = 4.0 * np.pi / c_L * R * R * R_dot * (R_dot * p + p_dot * R - 0.5 * par.rho_L * R_dot * R_dot * R_dot - par.rho_L * R * R_dot * dxdt[1])
@@ -381,29 +401,56 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, freq1, freq2, pA1, pA2,
 
 """________________________________Solving________________________________"""
 
-# This funfction solves the differential equation, and returns the numerical solution
-# Error codes:
-    # 0: succecfully solved with LSODA solver
-    # 1: LSODA solver didn't converge, but Radau solver worked
-    # 2: LSODA solver timed out, but Radau solver worked
-    # 3: LSODA solver had a fatal error, but Radau solver worked
-    # 4: LSODA solver failed, Radau solver didn't converge (NO SOLUTION!)
-    # 5: LSODA solver failed, Radau solver timed out (NO SOLUTION!)
-    # 6: LSODA solver failed, Radau solver had a fatal error (NO SOLUTION!) 
 def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
+    """
+    This funfction solves the differential equation, and returns the numerical solution.
+    Parameters:
+     * cpar: control parameters
+     * t_int: time interval
+     * LSODA_timeout: timeout for LSODA solver
+     * Radau_timeout: timeout for Radau solver
+
+    Returns:
+     * num_sol: numerical solution. use num_sol.t and num_sol.y to get the time and the solution
+     * error_code: see later
+     * elapsed_time: elapsed time
+
+    Error codes:
+     * -1: low pressure error
+     *  0: succecfully solved with LSODA solver
+     * x1: LSODA solver didn't converge
+     * x2: LSODA solver timed out
+     * x3: LSODA solver had a fatal error
+     * 4x: Radau solver didn't converge (NO SOLUTION!)
+     * 5x: Radau solver timed out (NO SOLUTION!)
+     * 6x: Radau solver had a fatal error (NO SOLUTION!)
+    """
     error_code = 0
     start = time.time()
     if not 'P_v' in cpar:
         cpar.P_v = VapourPressure(T=cpar.T_inf) # [Pa]
     if not 'mu_L' in cpar:
         cpar.mu_L = Viscosity(T=cpar.T_inf) # [Pa]
+    ex_args = []
+    for name, unit in zip(excitation_args, excitation_units):
+        if name in cpar:
+            ex_args.append(cpar[name])
+        else:
+            ex_args.append(0.0)
+            print(colored(f'Warning! Pressure excitation argument \'{name} [{unit}]\' is not in cpar. 0 is used instead. ', 'yellow'))
+    ex_args = np.array(ex_args, dtype=np.float64)
     IC, lowpressure_error = InitialCondition(cpar, enable_evaporation)
     if lowpressure_error:
-        return None, error_code, 0.0, lowpressure_error
+        return None, -1, 0.0
     
     # solving d/dt x=f(t, x, cpar)
-    try:
-        num_sol = func_timeout(LSODA_timeout, solve_ivp, kwargs=dict(fun=f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, args=(cpar.P_amb,cpar.alfa_M,cpar.T_inf,cpar.surfactant,cpar.P_v,cpar.mu_L,cpar.freq1,cpar.freq2,cpar.pA1,cpar.pA2, cpar.theta_phase, cpar.c_L)))
+    try: # try-catch block
+        num_sol = func_timeout( # timeout block
+            LSODA_timeout, solve_ivp,
+            kwargs=dict(fun=f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.c_L, ex_args) # f's arguments
+            )
+        )
         if num_sol.success == False:
             error_code = 1
     except FunctionTimedOut:
@@ -411,27 +458,31 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
     except:
         error_code = 3
     if error_code != 0:
-        try:
-            num_sol = func_timeout(Radau_timeout, solve_ivp, kwargs=dict(fun=f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, args=(cpar.P_amb,cpar.alfa_M,cpar.T_inf,cpar.surfactant,cpar.P_v,cpar.mu_L,cpar.freq1,cpar.freq2,cpar.pA1,cpar.pA2, cpar.theta_phase)))
+        try: # try-catch block
+            num_sol = func_timeout( # timeout block
+                Radau_timeout, solve_ivp, 
+                kwargs=dict(fun=f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
+                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.c_L, ex_args)) # f's arguments
+            )
             if num_sol.success == False:
-                error_code = 4
+                error_code += 40
         except FunctionTimedOut:
-            error_code = 5
+            error_code += 50
         except:
-            error_code = 6
+            error_code += 60
     
     end = time.time()
     elapsed_time = (end - start)
     
     if error_code > 3:
-        return None, error_code, elapsed_time, lowpressure_error
-    return num_sol, error_code, elapsed_time, lowpressure_error
+        return None, error_code, elapsed_time
+    return num_sol, error_code, elapsed_time
 
 
 """________________________________Post processing________________________________"""
 
 # This function gets the numerical solution and the control parameters, and returns some datas about the simulation
-def get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error):
+def get_data(cpar, num_sol, error_code, elapsed_time):
     # copy cpar:
     data = dotdict(dict(
         ID=cpar.ID,
@@ -442,32 +493,33 @@ def get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error):
         T_inf=cpar.T_inf,
         P_v=cpar.P_v,
         mu_L=cpar.mu_L,
-        freq1=cpar.freq1,
-        freq2=cpar.freq2,
-        pA1=cpar.pA1,
-        pA2=cpar.pA2,
-        theta_phase=cpar.theta_phase,
         surfactant=cpar.surfactant,
         gases=cpar.gases,
-        fractions=cpar.fractions
+        fractions=cpar.fractions,
+        c_L=cpar.c_L,
     ))
+    for name, unit in zip(excitation_args, excitation_units):
+        if name in cpar:
+            data[name] = cpar[name]
+        else:
+            data[name] = 0.0
+            #print(colored(f'Warning! Pressure excitation argument \'{name} [{unit}]\' is not in cpar. 0 is used instead. ', 'yellow'))
     
     # runtime and error
-    data.c_L=cpar.c_L
     data.error_code = error_code
     data.elapsed_time = elapsed_time # [s]
     
     # default values
-    if error_code > 3 or lowpressure_error:
+    if error_code > 3 or error_code < 0:
         data.steps = 0
         loc_min = 0.0
         data.collapse_time = 0.0
         data.T_max = 0.0
         data.x_initial = np.zeros((4+par.K), dtype=np.float64)
         data.x_final = np.zeros((4+par.K), dtype=np.float64)
-        data.n_H2 = 0.0
-        data.n_O2 = 0.0
-        data.n_NH3 = 0.0
+        #data.n_H2 = 0.0
+        #data.n_O2 = 0.0
+        #data.n_NH3 = 0.0
         data.expansion_work = 0.0
         data.dissipated_acoustic_energy = 0.0
         data.energy_efficiency = 0.0
@@ -477,7 +529,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error):
         data.steps = len(num_sol.t)
         data.x_initial = num_sol.y[:, 0] # initial values of [R, R_dot, T, c_1, ... c_K]
         
-        # collapse time (first loc min of R)
+        # collapse time (first loc min of R)    TODO fix
         loc_min = argrelmin(num_sol.y[:][0])
         data.collapse_time = 0.0
         if not len(loc_min[0]) == 0:
@@ -487,24 +539,20 @@ def get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error):
         data.T_max = np.max(num_sol.y[:][2]) # maximum of temperature peaks [K]
         data.x_final = num_sol.y[:, -1] # final values of [R, R_dot, T, c_1, ... c_K]
         last_V = 4.0 / 3.0 * (100.0 * data.x_final[0]) ** 3 * np.pi # [cm^3]
-        data.n_H2 = data.x_final[3+par.index['H2']] * last_V if 'H2' in par.species else 0.0 # [mol]
-        data.n_O2 = data.x_final[3+par.index['O2']] * last_V if 'O2' in par.species else 0.0 # [mol]
-        data.n_NH3 = data.x_final[3+par.index['NH3']] * last_V if 'NH3' in par.species else 0.0 # [mol]
-        m_H2 = 1.0e-3 * data.n_H2 * par.W[par.index['H2']] if 'H2' in par.species else 0.0 # [kg]
-        m_NH3 = 1.0e-3 * data.n_NH3 * par.W[par.index['NH3']] if 'NH3' in par.species else 0.0 # [kg]
+        data[f'n_{target_specie}'] = data.x_final[3+par.index[target_specie]] * last_V # [mol]
+        #data.n_H2 = data.x_final[3+par.index['H2']] * last_V if 'H2' in par.species else 0.0 # [mol]
+        #data.n_O2 = data.x_final[3+par.index['O2']] * last_V if 'O2' in par.species else 0.0 # [mol]
+        #data.n_NH3 = data.x_final[3+par.index['NH3']] * last_V if 'NH3' in par.species else 0.0 # [mol]
+        m_target = 1.0e-3 * data[f'n_{target_specie}'] * par.W[par.index[target_specie]] # [kg]
         data.expansion_work = Work(cpar, enable_evaporation) # [J]
         data.dissipated_acoustic_energy = data.x_final[-1]  # [J]
         all_work = data.expansion_work + data.dissipated_acoustic_energy if cpar.pA1!=0.0 or cpar.pA2!=0.0 else data.expansion_work
-        if 'NH3' in par.species: # assume we produce ammonia
-            data.energy_efficiency = 1.0e-6 * all_work / m_NH3 if m_NH3 > 0.0 else 1.0e30 # [MJ/kg]
-        elif 'H2' in par.species: # assume we produce hydrogen
-            data.energy_efficiency = 1.0e-6 * all_work / m_H2 if m_H2 > 0.0 else 1.0e30 # [MJ/kg]
-        else:
-            data.energy_efficiency = -1.0
+        data.energy_efficiency = 1.0e-6 * all_work / m_target if m_target > 0.0 else 1.0e30 # [MJ/kg]
+        data.target_specie = target_specie
     return data
 
 # keys of data: (except x_final)
-keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'gases', 'fractions', 'surfactant', 'freq1', 'freq2', 'pA1', 'pA2', 'theta_phase', 'c_L', 'error_code', 'elapsed_time', 'steps', 'collapse_time', 'T_max', 'n_H2', 'n_O2', 'n_NH3', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency']
+keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'gases', 'fractions', 'surfactant', 'freq1', 'freq2', 'pA1', 'pA2', 'theta_phase', 'c_L', 'error_code', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency']
 
 # This function prints the data dictionary in an organised way
 def print_data(data, print_it=True):
@@ -518,11 +566,11 @@ def print_data(data, print_it=True):
     P_v ={data.P_v: .2f} [Pa]
     mu_L ={1000.0*data.mu_L: .2f} [mPa*s]
     surfactant ={data.surfactant: .2f} [-]    
-    freq1 ={data.freq1: .0f} [Hz]
-    freq2 ={data.freq2: .0f} [Hz]
-    pA1 ={data.pA1: .0f} [Pa]
-    pA2 ={data.pA2: .0f} [Pa]
-    theta_phase={data.theta_phase: .2f} [rad]\n'''
+    excitation = \'{excitation_type}\'
+    ('''
+    for name, unit in zip(excitation_args, excitation_units):
+        text += f'{name} ={data[name]: .2f} [{unit}]; '
+    text = text[:-2] + f')\n    Initial content: '
     for gas, fraction in zip(data.gases, data.fractions):
         text += f'{int(100*fraction)}% {par.species[gas]}, ' 
     text = text[:-2] + f'''\nSimulation info:
@@ -532,7 +580,7 @@ def print_data(data, print_it=True):
     
     text += f'''\nFinal state:
     R_final ={1e6*data.x_final[0]: .2f} [um];   R_dot_final ={data.x_final[1]} [m/s];   T_final ={data.x_final[2]: .2f} [K]
-    n_H2 ={data.n_H2} [mol]; n_O2 ={data.n_O2} [mol]; n_NH3={data.n_NH3} [mol];
+    n_{target_specie}_final ={data[f'n_{target_specie}']: .2e} [mol]
     Final molar concentrations: [mol/cm^3]\n        '''
     
     for k, specie in enumerate(par.species):
@@ -544,7 +592,7 @@ def print_data(data, print_it=True):
     T_max ={data.T_max: .2f} [K]
     expansion work = {data.expansion_work} [J]
     dissipated acoustic energy = {data.dissipated_acoustic_energy} [J]
-    energy efficiency = {data.energy_efficiency} [MJ/kg]'''
+    energy efficiency = {data.energy_efficiency} [MJ/kg of {target_specie}]'''
     
     if print_it:
         print(text)
@@ -560,51 +608,59 @@ def simulate(kwargs):
         args[key] = kwargs[key]
     args = dotdict(args)
     cpar = dotdict(args.cpar)
-    num_sol, error_code, elapsed_time, lowpressure_error = solve(cpar, args.t_int, LSODA_timeout=args.LSODA_timeout, Radau_timeout=args.Radau_timeout)
-    data = get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error)
+    num_sol, error_code, elapsed_time = solve(cpar, args.t_int, LSODA_timeout=args.LSODA_timeout, Radau_timeout=args.Radau_timeout)
+    data = get_data(cpar, num_sol, error_code, elapsed_time)
     return dict(data)
 
 
 """________________________________Plotting________________________________"""
 
-# This funfction solves the differential equation, and plots it
-    # cpar: control parameters in a dictionary
-    # t_int: time interval to solve the diffeq in (default: [0, 1] [s])
-    #        graphs will be plotted in this intervall, if not default
-    # n: how long should the plotted time interval be compared to the collapse time (default: 5 [-])
-    # base_name: save plots as .png (default: '' alias do not save)
-    #            use base_name='plot' --> plot_1.png, plot_2.png
-    #            use base_name='images/plot' to save into images folder
-    #            using a folder for images is recommend
-    #            this folder have to be created manually
-    # LSODA_timeout, Radau_timeout: timeout (maximum runtime) for different solvers in solve() in seconds
-    # presentation: if True, the plot will be in presentation mode (default: False)
-def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30, Radau_timeout=300, presentation=False):
-    
-    num_sol, error_code, elapsed_time, lowpressure_error = solve(cpar, t_int, LSODA_timeout, Radau_timeout)
-    data = get_data(cpar, num_sol, error_code, elapsed_time, lowpressure_error)
+def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30, Radau_timeout=300, presentation_mode=False, plot_pressure=False, show_legend=False, show_cpar=True):
+    """
+    This funfction solves the differential equation, and plots it.
+    Parameters:
+     * cpar: control parameters in a dictionary
+     * t_int: time interval to solve the diffeq in (default: [0, 1] [s])
+           graphs will be plotted in this intervall, if not default
+     * n: how long should the plotted time interval be compared to the collapse time (default: 5 [-])
+     * base_name: save plots as .png (default: '' alias do not save)
+               use base_name='plot' --> plot_1.png, plot_2.png
+               use base_name='images/plot' to save into images folder
+               using a folder for images is recommend
+               this folder have to be created manually
+     * LSODA_timeout, Radau_timeout: timeout (maximum runtime) for different solvers in solve() in seconds
+     * presentation_mode: if True, the plot will be in presentation mode (default: False)
+     * plot_pressure: if True, the pressure will be plotted (default: False)
+     * show_legend: if True, the legend will be visible with every single species (default: False)
+     * show_cpar: if True, the control parameters will be printed on the plot (default: False)
+    """
+
+    num_sol, error_code, elapsed_time = solve(cpar, t_int, LSODA_timeout, Radau_timeout)
+    data = get_data(cpar, num_sol, error_code, elapsed_time)
     
 # Print errors
-    if lowpressure_error:
+    if error_code == -1:
         print(print(colored(f'Low pressure error (NO SOLUTION!)','red')))
         return None
-    if error_code == 0:
+    if error_code % 10 == 0:
         print(colored(f'succecfully solved with LSODA solver', 'green'))
-    if error_code == 1:
-        print(colored(f'LSODA solver didn\'t converge, but Radau solver worked', 'green'))
-    if error_code == 2:
-        print(colored(f'LSODA solver timed out, but Radau solver worked', 'green'))
-    if error_code == 3:
-        print(colored(f'LSODA solver had a fatal error, but Radau solver worked', 'green'))
-    if error_code == 4:
-        print(print(colored(f'LSODA solver failed, Radau solver didn\'t converge (NO SOLUTION!)','red')))
+    if error_code % 10 == 1:
+        print(colored(f'LSODA solver didn\'t converge', 'red'))
+    if error_code % 10 == 2:
+        print(colored(f'LSODA solver timed out', 'red'))
+    if error_code % 10 == 3:
+        print(colored(f'LSODA solver had a fatal error', 'red'))
+    if (error_code // 10) % 10 == 4:
+        print(print(colored(f'Radau solver didn\'t converge (NO SOLUTION!)','red')))
         return None
-    if error_code == 5:
-        print(print(colored(f'LSODA solver failed, Radau solver timed out (NO SOLUTION!)','red')))
+    if (error_code // 10) % 10 == 5:
+        print(print(colored(f'Radau solver timed out (NO SOLUTION!)','red')))
         return None
-    if error_code == 6:
-        print(print(colored(f'LSODA solver failed, Radau solver had a fatal error (NO SOLUTION!)','red')))
+    if (error_code // 10) % 10 == 6:
+        print(print(colored(f'Radau solver had a fatal error (NO SOLUTION!)','red')))
         return None
+    if error_code != 0:
+        print(colored(f'succecfully solved with Radau solver', 'green'))
     
 # Calculations
     if t_int[1] != 1.0: 
@@ -623,30 +679,31 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
 
     V = 4.0 / 3.0 * (100.0 * R) ** 3 * np.pi # [cm^3]
     n = c * V
+    if plot_pressure:
+        internal_pressure = 1e-6 * cpar.P_v + np.sum(n, axis=0) * par.R_g * T / V # [MPa]
 
 # plot R and T
-    linewidth = 2.0 if presentation else 1.0
-    plt.rcParams.update({'font.size': 24 if presentation else 18})
-    fig1 = plt.figure(figsize=(16, 9) if presentation else (20, 6))
+    linewidth = 2.0 if presentation_mode else 1.0
+    plt.rcParams.update({'font.size': 24 if presentation_mode else 18})
+    fig1 = plt.figure(figsize=(16, 9) if presentation_mode else (20, 6))
     ax1 = fig1.add_subplot(axisbelow=True)
-    ax2 = ax1.twinx()
+    ax2 = ax1.twinx() 
     ax1.plot(t, R / cpar.R_E, color = 'b', linewidth = linewidth)
     ax2.plot(t, T, color = 'r', linewidth = linewidth, linestyle = '-.')
 
-    ax1.set_ylabel('$y1$ [-]')
     if num_sol.t[end_index] < 1e-3:
         ax1.set_xlabel('$t$ [μs]')
     else:
         ax1.set_xlabel('$t$ [ms]')
     ax1.set_ylabel('$R/R_E$ [-]', color = 'b')
     ax2.set_ylabel('$T$ [K]', color = 'r')
-    if not presentation: ax1.grid()
+    if not presentation_mode: ax1.grid()
     
 # textbox with initial conditions
-    text = f"""Initial conditions:
+    f"""Initial conditions:
     {'$R_E$':<25} {1e6*cpar.R_E: .2f}  $[\mu m]$
     {'$R_0/R_E$':<25} {cpar.ratio: .2f}  $[-]$
-    {'$P_amb$':<25} {1e-5*cpar.P_amb: .2f}  $[bar]$
+    {'$P_{amb}$':<25} {1e-5*cpar.P_amb: .2f}  $[bar]$
     {'$α_M$':<25} {cpar.alfa_M: .2f}  $[-]$
     {'$T_inf$':<25} {cpar.T_inf-273.15: .2f}  $[°C]$
     {'$P_{vapour}$':<25} {cpar.P_v: .1f}  $[Pa]$
@@ -654,23 +711,35 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     {'$surfactant$':<25} {cpar.surfactant: .2f}  $[-]$
     {'Initial content:':<20}
     """
+    text = f'Initial conditions:\n'
+    text += f'    $R_E$ = {1e6*cpar.R_E: .2f} $[\mu m]$\n'
+    if cpar.ratio != 1.0:
+        text += f'    $R_0/R_E$ = {cpar.ratio: .2f} $[-]$\n'
+    text += f'    $P_{{amb}}$ = {1e-5*cpar.P_amb: .2f} $[bar]$\n'
+    text += f'    $T_{{inf}}$ = {cpar.T_inf-273.15: .2f} $[°C]$\n'
+    text += f'    $P_{{vapour}}$ = {cpar.P_v: .1f} $[Pa]$\n'
+    text += f'Initial content:\n    '
     for gas, fraction in zip(cpar.gases, cpar.fractions):
         text += f'{int(100*fraction)}% {par.species[gas]}, ' 
-    text = text[:-2]
-    if not presentation:
+    text = text[:-2] + f'\nExcitation = {excitation_type}:\n'
+    for name, unit in zip(excitation_args, excitation_units):
+        text += f'    {name} = {cpar[name]: .2f} [{unit}]\n'
+    text = text[:-1]
+
+    if show_cpar and not presentation_mode:
         ax1.text(
-            0.75, 0.95, # coordinates
+            0.98, 0.95, # coordinates
             text, transform=ax1.transAxes,
-            horizontalalignment='left', verticalalignment='top',
-            fontsize=16, fontstyle='oblique',
+            horizontalalignment='right', verticalalignment='top', multialignment='left',
+            fontsize=14, fontstyle='oblique',
             bbox={'facecolor': 'white', 'alpha': 1.0, 'pad': 10},
         )
     
     plt.show()
 
 # plot reactions
-    plt.rcParams.update({'font.size': 24 if presentation else 18})
-    fig2 = plt.figure(figsize=(16, 9) if presentation else (20, 9))
+    plt.rcParams.update({'font.size': 24 if presentation_mode else 18})
+    fig2 = plt.figure(figsize=(16, 9) if presentation_mode else (20, 9))
     ax = fig2.add_subplot(axisbelow=True)
 
     # plot the lines
@@ -678,10 +747,10 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
             # import seaborn as sns
             # colors = sns.color_palette('Set1', n_colors=10)
             # print(colors.as_hex()); colors
-    colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffd92f', '#a65628', '#f781bf', '#999999', '#e41a1c']
+    colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#d48044', '#33adff', '#a65628', '#f781bf', '#d444ca', '#d4ae44']
     color_index = 0
     texts = []
-    max_mol = n[:, -1] #np.max(n, axis=1) # maximum amounts of species [mol]
+    max_mol = np.max(n, axis=1) # maximum amounts of species [mol]
     indexes_to_plot = np.argsort(max_mol)[-10:] if len(max_mol) >= 10 else np.argsort(max_mol) # Get the indexes of the 10 largest values
     for i, specie in enumerate(par.species):
         name = specie
@@ -690,12 +759,12 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
         if i in indexes_to_plot:
             color = colors[color_index]
             color_index = color_index + 1 if color_index < len(colors) - 1 else 0
-            linewidth = 2.0 if presentation and n[i, -1] > 1e-24 else 1.0
+            linewidth = 2.0 if presentation_mode and n[i, -1] > 1e-24 else 1.0
             ax.plot(t, n[i], linewidth = linewidth, color=color, label = '$' + name + '$') # PLOT HERE
             texts.append((color, name, n[i, -1]))            
-        elif not presentation:
-            linewidth = 2.0 if presentation else 1.0
-            ax.plot(t, n[i], linewidth = linewidth)  # PLOT HERE
+        elif not presentation_mode:
+            linewidth = 2.0 if presentation_mode else 1.0
+            ax.plot(t, n[i], linewidth = linewidth, label = '$' + name + '$')  # PLOT HERE
 
     # make legend
     texts.sort(key=lambda x: x[-1], reverse=True)
@@ -704,7 +773,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
         color, name, n_final = text
         # spaceing
         if n_final < 1e-24: continue
-        limit = 5.0 if presentation else 3.0
+        limit = 5.0 if presentation_mode else 3.0
         if last_n_final / n_final < limit:
             n_final = last_n_final / limit
         last_n_final = n_final
@@ -714,7 +783,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
             n_final,
             '$' + name + '$',
             color=color,
-            fontsize=24 if presentation else 18,
+            fontsize=24 if presentation_mode else 18,
             verticalalignment='center',
             bbox={'facecolor': 'white', 'pad': 0, 'linewidth': 0.0},
         )
@@ -727,16 +796,56 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     else:
         ax.set_xlabel('$t$ [ms]')
     ax.set_ylabel('$n_k$ [mol]')
-    if not presentation: ax.grid()
-    #if not presentation: ax.legend()
+    if not presentation_mode: ax.grid()
+    if show_legend: ax.legend()
 
     plt.show()
+
+# plot pressure excitation
+    if plot_pressure:
+        plt.rcParams.update({'font.size': 24 if presentation_mode else 18})
+        fig3 = plt.figure(figsize=(16, 9) if presentation_mode else (20, 6))
+        ax = fig3.add_subplot(axisbelow=True)
+        ex_args = np.array([cpar[name] for name in excitation_args], dtype=np.float64)
+        external_pressure = [1e-3*Excitation(time, cpar.P_amb, ex_args)[0] for time in num_sol.t[:end_index]] # [MPa]
+        ax.plot(t, external_pressure, color='orange', label='external pressure', linewidth = 2.0 if presentation_mode else 1.0)
+
+        if num_sol.t[end_index] < 1e-3:
+            ax.set_xlabel('$t$ [μs]')
+        else:
+            ax.set_xlabel('$t$ [ms]')
+        ax.set_ylabel('Pressure excitation [kPa]')
+        if not presentation_mode: ax.grid()
+        ax.legend()
+
+        plt.show()
+
+# plot pressure
+    if plot_pressure:
+        plt.rcParams.update({'font.size': 24 if presentation_mode else 18})
+        fig4 = plt.figure(figsize=(16, 9) if presentation_mode else (20, 6))
+        ax = fig4.add_subplot(axisbelow=True)
+        ax.plot(t, internal_pressure, color = 'g', label='internal pressure', linewidth = 2.0 if presentation_mode else 1.0)
+
+        if num_sol.t[end_index] < 1e-3:
+            ax.set_xlabel('$t$ [μs]')
+        else:
+            ax.set_xlabel('$t$ [ms]')
+        ax.set_ylabel('Internal pressure [MPa]')
+        ax.set_yscale('log')
+        if not presentation_mode: ax.grid()
+
+        plt.show()
     
 # saving the plots
     if base_name != '':
         try:
-            fig1.savefig(base_name + '_1.png')
-            fig2.savefig(base_name + '_2.png')
+            metadata = {key: str(data[key]) for key in data.keys()}
+            fig1.savefig(base_name + '_1.png', format='png', metadata=metadata)
+            fig2.savefig(base_name + '_2.png', format='png', metadata=metadata)
+            if plot_pressure:
+                fig3.savefig(base_name + '_3.png', format='png', metadata=metadata)
+                fig4.savefig(base_name + '_4.png', format='png', metadata=metadata)
         except:
             print(print(colored(f'Error in saving {base_name}_1.png','red')))
 

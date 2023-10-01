@@ -572,6 +572,7 @@ def get_nu(reactions, species, W):
 
 def extract(path):
   # Open file
+    print(f'path={path}')
     try:
         file = open(path, 'r')
         text = file.read()
