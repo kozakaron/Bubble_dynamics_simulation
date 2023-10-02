@@ -145,16 +145,14 @@ def Work(cpar, evaporation=False):
 
 """________________________________Pressures________________________________"""
 
-@njit(float64[:](float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
-def Pressure(t, R, R_dot, T, T_dot, M, sum_omega_dot, mu_L, surfactant, P_amb, args):
+@njit(float64[:](float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
+def Pressure(t, R, R_dot, mu_L, surfactant, p, p_dot, P_amb, args):
     p_Inf, p_Inf_dot = Excitation(t, P_amb, args)
-    p = 0.1 * M * par.R_erg * T
-    p_dot = p * (sum_omega_dot / M + T_dot / T - 3.0 * R_dot/R)
     p_L = p - (2.0 * surfactant * par.sigma + 4.0 * mu_L * R_dot) / R
     p_L_dot = p_dot + (-2.0 * surfactant * par.sigma * R_dot + 4.0 * mu_L * R_dot ** 2) / (R ** 2)
     delta = (p_L - p_Inf) / par.rho_L
     delta_dot = (p_L_dot - p_Inf_dot) / par.rho_L
-    return np.array([delta, delta_dot, p_dot])
+    return np.array([delta, delta_dot], dtype=np.float64)
 
 
 """________________________________NASA polynomials________________________________"""
@@ -216,7 +214,7 @@ def Evaporation(M, T, X_H2O, alfa_M, T_inf, P_v):
     e_con = C_v * T * 1e-7
     evap_energy = n_eva_dot * e_eva - n_con_dot * e_con    # [W/m^2]
     
-    return np.array([n_net_dot, evap_energy])
+    return np.array([n_net_dot, evap_energy], dtype=np.float64)
 
 
 """________________________________Reaction rates________________________________"""
@@ -363,16 +361,16 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, c_L, ex_args):
     c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
     dxdt[3:-1] = c_dot
 # d/dt T
-    Q_r_dot = -np.sum(H * omega_dot) + np.sum(omega_dot) * par.R_erg * T
-    p = 0.1 * M * par.R_erg * T
+    sum_omega_dot = np.sum(omega_dot)
+    Q_r_dot = -np.sum(H * omega_dot) + sum_omega_dot * par.R_erg * T
+    p = 0.1 * M * par.R_erg * T # Partial pressure of the gases [Pa]
     T_dot = (Q_r_dot + 30.0 / R * (-p * R_dot + Q_th_dot + evap_energy)) / (M * C_v_avg)
+    p_dot = p * (sum_omega_dot / M + T_dot / T - 3.0 * R_dot / R) # for later use
     dxdt[2] = T_dot
 # d/dt R_dot
-    [delta, delta_dot, p_dot] = Pressure(t=t,
-        R=R, R_dot=R_dot, T=T, T_dot=T_dot,
-        M=M, sum_omega_dot=np.sum(omega_dot),
-        mu_L=mu_L, surfactant=surfactant, P_amb=P_amb,
-        args=ex_args
+    [delta, delta_dot] = Pressure(t=t,
+        R=R, R_dot=R_dot, mu_L=mu_L, surfactant=surfactant,
+        p=p, p_dot=p_dot, P_amb=P_amb, args=ex_args
     )   # delta = (p_L-P_amb) / rho_L
     
     Nom = (1.0 + R_dot / c_L) * delta + R / c_L * delta_dot - (1.5 - 0.5 * R_dot / c_L) * R_dot ** 2
