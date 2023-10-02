@@ -159,6 +159,7 @@ physical_constants = dict(
     cal2J = dict(value=4.184, comment='Conversion factor from cal to J'),
     atm2Pa = dict(value=101325.0, comment='Conversion factor from atm to Pa'),
     bar2Pa = dict(value=1.0e5, comment='Conversion factor from bar to Pa'),
+    absolute_zero = dict(value=273.15, comment='Zero °C in Kelvin'),
 )
 
 def calculate_missing_constants():

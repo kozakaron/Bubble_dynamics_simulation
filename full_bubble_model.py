@@ -41,9 +41,9 @@ class dotdict(dict):
 enable_heat_transfer = True
 enable_evaporation = True
 enable_reactions = True
-enable_discipated_energy = True
+enable_dissipated_energy = True
 target_specie = 'H2' # Specie to calculate energy effiqiency
-excitation_type = 'sin_impulse' # function to calculate pressure excitation
+excitation_type = 'sin_impulse_flat_ends' # function to calculate pressure excitation
 
 """________________________________Before the simulation________________________________"""
 
@@ -56,7 +56,7 @@ if par.indexOfWater == -1:
 print(f'model: {par.model}')
 print(f'target specie: {target_specie}')
 print(f'excitation: {excitation_type} (control parameters: {excitation_args})')
-print(f'enable heat transfer: {colorTF(enable_heat_transfer)}\tenable evaporation: {colorTF(enable_evaporation)}\tenable reactions: {colorTF(enable_reactions)}\tenable discipated energy: {colorTF(enable_discipated_energy)}')
+print(f'enable heat transfer: {colorTF(enable_heat_transfer)}\tenable evaporation: {colorTF(enable_evaporation)}\tenable reactions: {colorTF(enable_reactions)}\tenable dissipated energy: {colorTF(enable_dissipated_energy)}')
 if target_specie not in par.species:
     print(colored(f'Error, target specie \'{target_specie}\' not found in parameters.py', 'red'))
 
@@ -91,7 +91,7 @@ def InitialCondition(cpar, evaporation=False):
     p_E = cpar.P_amb + 2.0 * cpar.surfactant * par.sigma / cpar.R_E # [Pa]
     V_E = 4.0 / 3.0 * cpar.R_E**3 * np.pi # [m^3]
     p_gas = p_E - cpar.P_v if evaporation else p_E
-    lowpressure_error = False
+    lowpressure_error = lowpressure_warning = False
     if p_gas < 0.0:
         print(colored('Error! The pressure of the gas is negative!', 'red'))
         lowpressure_error = True
@@ -107,7 +107,7 @@ def InitialCondition(cpar, evaporation=False):
     P_amb_min += p_gas - 2.0 * cpar.surfactant * par.sigma / R_0 # [Pa]
     if P_amb_min < cpar.P_v:
         print(colored('Warning! The pressure during the expansion is lower, than the saturated water pressure', 'yellow'))
-        lowpressure_error = True
+        lowpressure_warning = True
 
     # Initial conditions
     IC[0] = R_0   # R_0 [m]
@@ -118,7 +118,7 @@ def InitialCondition(cpar, evaporation=False):
     for index, fraction in zip(cpar.gases, cpar.fractions):
         IC[3 + index] = fraction * c_gas * 1.0e-6    # [mol/cm^3]
     IC[3 + par.K] = 0.0 #dissipated acoustic energy [J]
-    return IC, lowpressure_error
+    return IC, lowpressure_error, lowpressure_warning
 
 
 def Work(cpar, evaporation=False):
@@ -269,22 +269,16 @@ def ForwardRate(T, M_eff, M):
     if par.PlogCount > 0:
         p = 0.1 * M * par.R_erg * T
     for j, i in enumerate(par.PlogIndexes):
-        #if p < par.Plog[3*j][0]:
-        #    k_forward[i] = par.Plog[3*j][1] * T ** par.Plog[3*j][2] * np.exp(-par.Plog[3*j][3] / (par.R_cal * T))
-        #elif p < par.Plog[3*j+1][0]:
         if p < par.Plog[3*j+1][0]:
             k_1 = par.Plog[3*j][1] * T ** par.Plog[3*j][2] * np.exp(-par.Plog[3*j][3] / (par.R_cal * T))
             k_2 = par.Plog[3*j+1][1] * T ** par.Plog[3*j+1][2] * np.exp(-par.Plog[3*j+1][3] / (par.R_cal * T))
             ln_k = np.log(k_1) + (np.log(p) - np.log(par.Plog[3*j][0])) / (np.log(par.Plog[3*j+1][0]) - np.log(par.Plog[3*j][0])) * (np.log(k_2) - np.log(k_1))
             k_forward[i] = np.exp(ln_k)
-        #elif p < par.Plog[3*j+2][0]:
         else:
             k_2 = par.Plog[3*j+1][1] * T ** par.Plog[3*j+1][2] * np.exp(-par.Plog[3*j+1][3] / (par.R_cal * T))
             k_3 = par.Plog[3*j+2][1] * T ** par.Plog[3*j+2][2] * np.exp(-par.Plog[3*j+2][3] / (par.R_cal * T))
             ln_k = np.log(k_2) + (np.log(p) - np.log(par.Plog[3*j+1][0])) / (np.log(par.Plog[3*j+2][0]) - np.log(par.Plog[3*j+1][0])) * (np.log(k_3) - np.log(k_2))
             k_forward[i] = np.exp(ln_k)
-        #else:
-        #    k_forward[i] = par.Plog[3*j+2][1] * T ** par.Plog[3*j+2][2] * np.exp(-par.Plog[3*j+2][3] / (par.R_cal * T))  
     return k_forward
 
 
@@ -386,7 +380,7 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, c_L, ex_args):
     
     dxdt[1] = Nom / Den
     
-    if enable_discipated_energy:
+    if enable_dissipated_energy:
         V_dot=4.0 * R * R * R_dot * np.pi
         integrand_th = -(p * (1 + R_dot / c_L) + R / c_L * p_dot) * V_dot
         integrand_v = 16.0 * np.pi * mu_L * (R * R_dot*R_dot + R * R * R_dot * dxdt[1] / c_L)
@@ -416,14 +410,15 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
      * elapsed_time: elapsed time
 
     Error codes:
-     * -1: low pressure error
-     *  0: succecfully solved with LSODA solver
-     * x1: LSODA solver didn't converge
-     * x2: LSODA solver timed out
-     * x3: LSODA solver had a fatal error
-     * 4x: Radau solver didn't converge (NO SOLUTION!)
-     * 5x: Radau solver timed out (NO SOLUTION!)
-     * 6x: Radau solver had a fatal error (NO SOLUTION!)
+     * 1xx: low pressure error
+     * 1xx: low pressure warning
+     * xx0: succecfully solved with LSODA solver
+     * xx1: LSODA solver didn't converge
+     * xx2: LSODA solver timed out
+     * xx3: LSODA solver had a fatal error
+     * x4x: Radau solver didn't converge (NO SOLUTION!)
+     * x5x: Radau solver timed out (NO SOLUTION!)
+     * x6x: Radau solver had a fatal error (NO SOLUTION!)
     """
     error_code = 0
     start = time.time()
@@ -439,9 +434,12 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
             ex_args.append(0.0)
             print(colored(f'Warning! Pressure excitation argument \'{name} [{unit}]\' is not in cpar. 0 is used instead. ', 'yellow'))
     ex_args = np.array(ex_args, dtype=np.float64)
-    IC, lowpressure_error = InitialCondition(cpar, enable_evaporation)
+    IC, lowpressure_error, lowpressure_warning = InitialCondition(cpar, enable_evaporation)
     if lowpressure_error:
-        return None, -1, 0.0
+        error_code += 100
+        return None, error_code, 0.0
+    elif lowpressure_warning:
+        error_code += 200
     
     # solving d/dt x=f(t, x, cpar)
     try: # try-catch block
@@ -452,12 +450,12 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
             )
         )
         if num_sol.success == False:
-            error_code = 1
+            error_code += 1
     except FunctionTimedOut:
-        error_code = 2
+        error_code = +2
     except:
-        error_code = 3
-    if error_code != 0:
+        error_code += 3
+    if error_code % 10 != 0:
         try: # try-catch block
             num_sol = func_timeout( # timeout block
                 Radau_timeout, solve_ivp, 
@@ -474,7 +472,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
     end = time.time()
     elapsed_time = (end - start)
     
-    if error_code > 3:
+    if error_code % 100 > 3:
         return None, error_code, elapsed_time
     return num_sol, error_code, elapsed_time
 
@@ -510,19 +508,18 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.elapsed_time = elapsed_time # [s]
     
     # default values
-    if error_code > 3 or error_code < 0:
+    if error_code % 100 > 3 or (error_code // 100) % 100 == 1:
         data.steps = 0
-        loc_min = 0.0
         data.collapse_time = 0.0
         data.T_max = 0.0
         data.x_initial = np.zeros((4+par.K), dtype=np.float64)
         data.x_final = np.zeros((4+par.K), dtype=np.float64)
-        #data.n_H2 = 0.0
-        #data.n_O2 = 0.0
-        #data.n_NH3 = 0.0
+        data[f'n_{target_specie}'] = 0.0
+        data.m_target = 0.0
         data.expansion_work = 0.0
         data.dissipated_acoustic_energy = 0.0
         data.energy_efficiency = 0.0
+        data.target_specie = target_specie
     
     # normal functioning
     else:
@@ -540,9 +537,6 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
         data.x_final = num_sol.y[:, -1] # final values of [R, R_dot, T, c_1, ... c_K]
         last_V = 4.0 / 3.0 * (100.0 * data.x_final[0]) ** 3 * np.pi # [cm^3]
         data[f'n_{target_specie}'] = data.x_final[3+par.index[target_specie]] * last_V # [mol]
-        #data.n_H2 = data.x_final[3+par.index['H2']] * last_V if 'H2' in par.species else 0.0 # [mol]
-        #data.n_O2 = data.x_final[3+par.index['O2']] * last_V if 'O2' in par.species else 0.0 # [mol]
-        #data.n_NH3 = data.x_final[3+par.index['NH3']] * last_V if 'NH3' in par.species else 0.0 # [mol]
         m_target = 1.0e-3 * data[f'n_{target_specie}'] * par.W[par.index[target_specie]] # [kg]
         data.expansion_work = Work(cpar, enable_evaporation) # [J]
         data.dissipated_acoustic_energy = data.x_final[-1]  # [J]
@@ -552,7 +546,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     return data
 
 # keys of data: (except x_final)
-keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'gases', 'fractions', 'surfactant', 'freq1', 'freq2', 'pA1', 'pA2', 'theta_phase', 'c_L', 'error_code', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency']
+keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'gases', 'fractions', 'surfactant', 'c_L', 'error_code', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency', 'target_specie'] + excitation_args
 
 # This function prints the data dictionary in an organised way
 def print_data(data, print_it=True):
@@ -639,9 +633,11 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     data = get_data(cpar, num_sol, error_code, elapsed_time)
     
 # Print errors
-    if error_code == -1:
-        print(print(colored(f'Low pressure error (NO SOLUTION!)','red')))
+    if (error_code // 100) % 100 == 1:
+        print(print(colored(f'Low pressure error', 'red')))
         return None
+    if (error_code // 100) % 100 == 2:
+        print(print(colored(f'Low pressure warning', 'yellow')))
     if error_code % 10 == 0:
         print(colored(f'succecfully solved with LSODA solver', 'green'))
     if error_code % 10 == 1:
@@ -659,7 +655,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     if (error_code // 10) % 10 == 6:
         print(print(colored(f'Radau solver had a fatal error (NO SOLUTION!)','red')))
         return None
-    if error_code != 0:
+    if error_code % 10 != 0:
         print(colored(f'succecfully solved with Radau solver', 'green'))
     
 # Calculations
@@ -852,15 +848,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
 # print data
     print_data(data)
     return None
-    
-#checks if a string is a number (float or int)
-def is_number(s):
-    try:
-        float(s)
-        return True
-    except ValueError:
-        return False
-        
+           
 
 """________________________________Save to CSV________________________________"""
 
@@ -889,8 +877,8 @@ class Make_dir:
         line = ''
         for element in array:
             element = str(element).replace(',', ' ').replace('[', '').replace(']', '')
-            if is_number(element):
-                line += f'{float64(element):e}' + self.separator
+            if isinstance(element, (float, int)):
+                line += f'{float64(element): e}' + self.separator
             else:     
                 line += element + self.separator
         return line[:-1]

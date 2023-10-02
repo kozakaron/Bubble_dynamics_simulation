@@ -16,7 +16,8 @@ def getExcitation(excitation_type='no_excitation'):
      * 'two_sinusoids': two sinusoids with different frequencies and amplitudes, and a phase shift between them
      * 'sin_sqr': sinusoid squared with only n amplitude cycles
      * 'slow_expansion': decrease from abient pressure to min_pressure (decay_time), followed by a slow increase back to ambient pressure (increase_time)
-     * 'sin_impulse': sinusoid with only n amplitude cycles, the ends are smoothed out
+     * 'sin_impulse_flat_ends': sinusoid with only n amplitude cycles, the ends are smoothed out
+     * 'sin_impulse': sinusoid with only n amplitude cycles, the ends are not smoothed out
     """
 
     if excitation_type == 'no_excitation':
@@ -80,7 +81,7 @@ def getExcitation(excitation_type='no_excitation'):
         units = ['s', 's', 'Hz']
         return Excitation, args, units
     
-    elif excitation_type == 'sin_impulse':
+    elif excitation_type == 'sin_impulse_flat_ends':
         @njit(float64[:](float64, float64, float64[:]))
         def Excitation(t, P_amb, args):
             p_A, freq, n = args
@@ -106,6 +107,28 @@ def getExcitation(excitation_type='no_excitation'):
         args = ['p_A', 'freq', 'n']
         units = ['Pa', 'Hz', '-']
         return Excitation, args, units
+    
+    elif excitation_type == 'sin_impulse':
+        @njit(float64[:](float64, float64, float64[:]))
+        def Excitation(t, P_amb, args):
+            p_A, freq, n = args
+            if t < 0.0:
+                p_Inf = P_amb
+                p_Inf_dot = 0.0
+            elif t > n / freq:
+                p_Inf = P_amb
+                p_Inf_dot = 0.0
+            else:
+                insin = 2.0*np.pi*freq
+                p_Inf = P_amb + p_A*np.sin(insin*t)
+                p_Inf_dot = p_A*insin*np.cos(insin*t)
+
+            return np.array([p_Inf, p_Inf_dot], dtype=np.float64)
+        
+        args = ['p_A', 'freq', 'n']
+        units = ['Pa', 'Hz', '-']
+        return Excitation, args, units
+    
     else:
         print(colored(f'Warning: Excitation excitation_type \'{excitation_type}\' not recognized. Using \'no_excitation\' instead. ', 'yellow'))
         return getExcitation('no_excitation')

@@ -606,7 +606,7 @@ def extract(path):
     text += line_start + 'Physical constants' + line_end
     data.calculate_missing_constants()
     for key, constant in data.physical_constants.items():
-        text += f'{key: <10} = {constant["value"]: <25}# {constant["comment"]}\n'
+        text += f'{key: <14} = {constant["value"]: <25}# {constant["comment"]}\n'
     text += '\n'
     
     # Species and elements
