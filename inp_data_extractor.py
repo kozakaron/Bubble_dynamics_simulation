@@ -17,6 +17,8 @@ except:
         import Bubble_dynamics_simulation.data as data
     except:
         print(colored(f'Error, \'data.py\' not found', 'red'))
+import importlib
+importlib.reload(data)
 
 comment = '!'
 

@@ -26,24 +26,39 @@ except:
         import Bubble_dynamics_simulation.excitation as excitation
         importlib.reload(excitation)
     except:
-        print(colored(f'Error, \'excitation.py\' not found', 'red'))
-
-# dot.notation access to dictionary attributes
-# instead of dictionary['key'] you can use dictionary.key
-class dotdict(dict):
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
-    
+        print(colored(f'Error, \'excitation.py\' not found', 'red'))    
 
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
 enable_evaporation = True
 enable_reactions = True
-enable_dissipated_energy = True
+enable_dissipated_energy = False
 target_specie = 'H2' # Specie to calculate energy effiqiency
-excitation_type = 'sin_impulse_flat_ends' # function to calculate pressure excitation
+excitation_type = 'no_excitation' # function to calculate pressure excitation
+
+"""________________________________General________________________________"""
+
+class dotdict(dict):
+    """Dot notation access to dictionary attributes. 
+    Instead of dictionary['key'] you can use dictionary.key"""
+    __getattr__ = dict.get
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+def copy(input):
+    """deep copy of input"""
+
+    if type(input) == list:
+        return [copy(element) for element in input]
+    elif type(input) == dict:
+        return {key: copy(value) for key, value in input.items()}
+    elif type(input) == np.ndarray:
+        return input.copy()
+    elif type(input) == dotdict:
+        return dotdict({key: copy(value) for key, value in input.items()})
+    else:
+        return input
 
 """________________________________Before the simulation________________________________"""
 
@@ -59,6 +74,32 @@ print(f'excitation: {excitation_type} (control parameters: {excitation_args})')
 print(f'enable heat transfer: {colorTF(enable_heat_transfer)}\tenable evaporation: {colorTF(enable_evaporation)}\tenable reactions: {colorTF(enable_reactions)}\tenable dissipated energy: {colorTF(enable_dissipated_energy)}')
 if target_specie not in par.species:
     print(colored(f'Error, target specie \'{target_specie}\' not found in parameters.py', 'red'))
+    
+def example_cpar():
+    '''Prints an example of the control parameter dictionary.'''
+    print(f'''cpar = de.dotdict(dict(
+    ID = 0,                           # ID of control parameter (not used during calculation)
+  # Initial conditions:
+    R_E = 10.0e-6,                    # bubble equilibrium radius [m]
+    ratio = 1.0,                      # initial radius / equilibrium radius R_0/R_E [-]
+    gases = [par.index['O2']],        # indexes of species in initial bubble (list of species indexes)
+    fractions = [1.0],                # molar fractions of species in initial bubble (list of fractions for every gas)
+  # Ambient parameters:
+    P_amb = 1.0 * par.atm2Pa,         # ambient pressure [Pa]
+    T_inf = 30.0 + par.absolute_zero, # ambient temperature [K]
+  # Liquid parameters:
+    alfa_M = par.alfa_M,              # water accommodation coefficient [-]
+    P_v = par.P_v,                    # vapour pressure [Pa]
+    mu_L = par.mu_L,                  # dynamic viscosity [Pa*s]
+    c_L = par.c_L,                    # sound speed [m/s]
+    surfactant = 1.0,                 # surfactant (surface tension modfier) [-]
+  # Excitation parameters: (excitation_type = {excitation_type})''')
+    for arg, unit in zip(excitation_args, excitation_units):
+        spaces = ''.join([' ' for _ in range(25 - len(arg))])
+        print(f'    {arg:} = 0.0, {spaces} # [{unit}]')
+    print(f'))\n\n# Calculate pressure/temperature dependent parameters:')
+    print('cpar.mu_L = de.Viscosity(cpar.T_inf)')
+    print('cpar.P_v = de.VapourPressure(cpar.T_inf)')
 
 @njit(float64(float64))
 def VapourPressure(T): # [K]
@@ -117,7 +158,8 @@ def InitialCondition(cpar, evaporation=False):
         IC[3 + par.index['H2O']] = c_H2O * 1.0e-6    # [mol/cm^3]
     for index, fraction in zip(cpar.gases, cpar.fractions):
         IC[3 + index] = fraction * c_gas * 1.0e-6    # [mol/cm^3]
-    IC[3 + par.K] = 0.0 #dissipated acoustic energy [J]
+    IC[3 + par.K] = 0.0 # dissipated acoustic energy [J]
+
     return IC, lowpressure_error, lowpressure_warning
 
 
@@ -225,10 +267,6 @@ def ForwardRate(T, M_eff, M):
     k_forward = par.A * T ** par.b * np.exp(-par.E / (par.R_cal * T))
     
 # Pressure dependent reactions
-    LindemannIndex=0
-    TroeIndex=0
-    SRIIndex=0
-    
     for j, i in enumerate(par.PressureDependentIndexes):    # i is the number of reaction, j is the index of i's place in par.PressureDependentIndexes
         k_inf = k_forward[i]    # par.A[i] * T ** par.b[i] * np.exp(-par.E[i] / (par.R_cal * T))
         k_0 = par.ReacConst[j][0] * T ** par.ReacConst[j][1] * np.exp(-par.ReacConst[j][2] / (par.R_cal * T))
@@ -238,11 +276,10 @@ def ForwardRate(T, M_eff, M):
          # Lindemann formalism
         if i in par.LindemannIndexes:
             F = 1.0
-            LindemannIndex += 1
 
-    # Troe formalism
+        # Troe formalism
         elif i in par.TroeIndexes:
-            F_cent = (1.0 - par.Troe[TroeIndex][0]) * np.exp(-T / par.Troe[TroeIndex][1]) + par.Troe[TroeIndex][0] * np.exp(-T / par.Troe[TroeIndex][2]) + np.exp(-par.Troe[TroeIndex][3] / T)
+            F_cent = (1.0 - par.Troe[j][0]) * np.exp(-T / par.Troe[j][1]) + par.Troe[j][0] * np.exp(-T / par.Troe[j][2]) + np.exp(-par.Troe[j][3] / T)
             logF_cent = np.log10(F_cent)
             c2 = -0.4 - 0.67 * logF_cent
             n = 0.75 - 1.27 * logF_cent
@@ -250,15 +287,13 @@ def ForwardRate(T, M_eff, M):
             logP_r = np.log10(P_r)
             logF = 1.0 / (1.0 + ((logP_r + c2) / (n - d * (logP_r + c2))) ** 2) * logF_cent
             F = 10.0 ** logF
-            TroeIndex += 1
         
         # SRI formalism
         elif i in par.SRIIndexes: 
             X = 1.0 / (1.0 + np.log10(P_r)**2)
-            F = par.SRI[SRIIndex][3] * (par.SRI[SRIIndex][0] * np.exp(-par.SRI[SRIIndex][1] / T) + np.exp(-T / par.SRI[SRIIndex][2]))**X * T ** par.SRI[SRIIndex][4]
-            SRIIndex += 1
+            F = par.SRI[j][3] * (par.SRI[j][0] * np.exp(-par.SRI[j][1] / T) + np.exp(-T / par.SRI[j][2]))**X * T ** par.SRI[j][4]
         else:
-            print('Error, the pressure-dependent reaction cannot be groupped in any type of pressure-dependent reactions!','red')
+            print('Error, the pressure-dependent reaction cannot be groupped in any type of pressure-dependent reactions!')
       # Pressure dependent reactions END
     
         k_forward[i] = k_inf * P_r / (1.0 + P_r) * F
@@ -404,19 +439,8 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
 
     Returns:
      * num_sol: numerical solution. use num_sol.t and num_sol.y to get the time and the solution
-     * error_code: see later
+     * error_code: see de.error_codes: dict, de.get_errors()
      * elapsed_time: elapsed time
-
-    Error codes:
-     * 1xx: low pressure error
-     * 1xx: low pressure warning
-     * xx0: succecfully solved with LSODA solver
-     * xx1: LSODA solver didn't converge
-     * xx2: LSODA solver timed out
-     * xx3: LSODA solver had a fatal error
-     * x4x: Radau solver didn't converge (NO SOLUTION!)
-     * x5x: Radau solver timed out (NO SOLUTION!)
-     * x6x: Radau solver had a fatal error (NO SOLUTION!)
     """
     error_code = 0
     start = time.time()
@@ -450,7 +474,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
         if num_sol.success == False:
             error_code += 1
     except FunctionTimedOut:
-        error_code = +2
+        error_code += 2
     except:
         error_code += 3
     if error_code % 10 != 0:
@@ -474,6 +498,47 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
         return None, error_code, elapsed_time
     return num_sol, error_code, elapsed_time
 
+# error codes description
+error_codes = { # this is also a dictionary
+    'xx0': dict(describtion='succecfully solved with LSODA solver', color='green'),
+    'xx1': dict(describtion='LSODA solver didn\'t converge', color='yellow'),
+    'xx2': dict(describtion='LSODA solver timed out', color='yellow'),
+    'xx3': dict(describtion='LSODA solver had a fatal error', color='yellow'),
+    'x0x': dict(describtion='succecfully solved with Radau solver', color='green'),
+    'x4x': dict(describtion='Radau solver didn\'t converge (NO SOLUTION!)', color='red'),
+    'x5x': dict(describtion='Radau solver timed out (NO SOLUTION!)', color='red'),
+    'x6x': dict(describtion='Radau solver had a fatal error (NO SOLUTION!)', color='red'),
+    '1xx': dict(describtion='Low pressure error: The pressure of the gas is negative', color='red'),
+    '2xx': dict(describtion='Low pressure warning: The pressure during the expansion is lower, than the saturated water pressure', color='yellow'),
+}
+
+def get_errors(error_code, printit=False):
+    '''
+    * Input: error_code (int) 
+    * Output: list of error codes (str)
+    * Also prints colored errors, if printit=True
+    '''
+    # get digits of error_code
+    first_digit = f'xx{error_code % 10}'
+    second_digit = f'x{(error_code // 10) % 10}x'
+    third_digit = f'{(error_code // 100) % 10}xx'
+
+    # get only relevant errors
+    errors = []
+    errors.append(first_digit)
+    if first_digit != 'xx0':
+        errors.append(second_digit)
+    if third_digit != '0xx':
+        errors.append(third_digit)
+
+    # determine if soultion was succesfull
+    success = '1xx' not in errors and ('xx0' in errors or 'x0x' in errors)
+
+    # print errors
+    if printit:
+        for error in errors:
+            print(colored(error_codes[error]['describtion'], error_codes[error]['color']))
+    return errors, success
 
 """________________________________Post processing________________________________"""
 
@@ -506,41 +571,42 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.elapsed_time = elapsed_time # [s]
     
     # default values
-    if error_code % 100 > 3 or (error_code // 100) % 100 == 1:
-        data.steps = 0
-        data.collapse_time = 0.0
-        data.T_max = 0.0
-        data.x_initial = np.zeros((4+par.K), dtype=np.float64)
-        data.x_final = np.zeros((4+par.K), dtype=np.float64)
-        data[f'n_{target_specie}'] = 0.0
-        data.m_target = 0.0
-        data.expansion_work = 0.0
-        data.dissipated_acoustic_energy = 0.0
-        data.energy_efficiency = 0.0
-        data.target_specie = target_specie
+    data.steps = 0
+    data.collapse_time = 0.0
+    data.T_max = 0.0
+    data.x_initial = np.zeros((4+par.K), dtype=np.float64)
+    data.x_final = np.zeros((4+par.K), dtype=np.float64)
+    data[f'n_{target_specie}'] = 0.0
+    data.m_target = 0.0
+    data.expansion_work = 0.0
+    data.dissipated_acoustic_energy = 0.0
+    data.energy_efficiency = 0.0
+    data.target_specie = target_specie
+    errors, success = get_errors(error_code)
+    if not success:
+        return data
     
     # normal functioning
-    else:
-        data.steps = len(num_sol.t)
-        data.x_initial = num_sol.y[:, 0] # initial values of [R, R_dot, T, c_1, ... c_K]
+    data.steps = len(num_sol.t)
+    data.x_initial = num_sol.y[:, 0] # initial values of [R, R_dot, T, c_1, ... c_K]
         
-        # collapse time (first loc min of R)    TODO fix
-        loc_min = argrelmin(num_sol.y[:][0])
-        data.collapse_time = 0.0
-        if not len(loc_min[0]) == 0:
-            data.collapse_time = num_sol.t[loc_min[0][0]]
+    # collapse time (first loc min of R)    TODO fix
+    loc_min = argrelmin(num_sol.y[:][0])
+    data.collapse_time = 0.0
+    if not len(loc_min[0]) == 0:
+        data.collapse_time = num_sol.t[loc_min[0][0]]
         
-        # Energy calculations
-        data.T_max = np.max(num_sol.y[:][2]) # maximum of temperature peaks [K]
-        data.x_final = num_sol.y[:, -1] # final values of [R, R_dot, T, c_1, ... c_K]
-        last_V = 4.0 / 3.0 * (100.0 * data.x_final[0]) ** 3 * np.pi # [cm^3]
-        data[f'n_{target_specie}'] = data.x_final[3+par.index[target_specie]] * last_V # [mol]
-        m_target = 1.0e-3 * data[f'n_{target_specie}'] * par.W[par.index[target_specie]] # [kg]
-        data.expansion_work = Work(cpar, enable_evaporation) # [J]
-        data.dissipated_acoustic_energy = data.x_final[-1]  # [J]
-        all_work = data.expansion_work + data.dissipated_acoustic_energy if cpar.pA1!=0.0 or cpar.pA2!=0.0 else data.expansion_work
-        data.energy_efficiency = 1.0e-6 * all_work / m_target if m_target > 0.0 else 1.0e30 # [MJ/kg]
-        data.target_specie = target_specie
+    # Energy calculations
+    data.T_max = np.max(num_sol.y[:][2]) # maximum of temperature peaks [K]
+    data.x_final = num_sol.y[:, -1] # final values of [R, R_dot, T, c_1, ... c_K]
+    last_V = 4.0 / 3.0 * (100.0 * data.x_final[0]) ** 3 * np.pi # [cm^3]
+    data[f'n_{target_specie}'] = data.x_final[3+par.index[target_specie]] * last_V # [mol]
+    m_target = 1.0e-3 * data[f'n_{target_specie}'] * par.W[par.index[target_specie]] # [kg]
+    data.expansion_work = Work(cpar, enable_evaporation) # [J]
+    data.dissipated_acoustic_energy = data.x_final[-1]  # [J]
+    all_work = data.expansion_work + data.dissipated_acoustic_energy
+    data.energy_efficiency = 1.0e-6 * all_work / m_target if m_target > 0.0 else 1.0e30 # [MJ/kg]
+    data.target_specie = target_specie
     return data
 
 # keys of data: (except x_final)
@@ -631,30 +697,10 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     data = get_data(cpar, num_sol, error_code, elapsed_time)
     
 # Print errors
-    if (error_code // 100) % 100 == 1:
-        print(print(colored(f'Low pressure error', 'red')))
+    errors, success = get_errors(error_code, printit=True)
+    if not success:
+        print_data(data)
         return None
-    if (error_code // 100) % 100 == 2:
-        print(print(colored(f'Low pressure warning', 'yellow')))
-    if error_code % 10 == 0:
-        print(colored(f'succecfully solved with LSODA solver', 'green'))
-    if error_code % 10 == 1:
-        print(colored(f'LSODA solver didn\'t converge', 'red'))
-    if error_code % 10 == 2:
-        print(colored(f'LSODA solver timed out', 'red'))
-    if error_code % 10 == 3:
-        print(colored(f'LSODA solver had a fatal error', 'red'))
-    if (error_code // 10) % 10 == 4:
-        print(print(colored(f'Radau solver didn\'t converge (NO SOLUTION!)','red')))
-        return None
-    if (error_code // 10) % 10 == 5:
-        print(print(colored(f'Radau solver timed out (NO SOLUTION!)','red')))
-        return None
-    if (error_code // 10) % 10 == 6:
-        print(print(colored(f'Radau solver had a fatal error (NO SOLUTION!)','red')))
-        return None
-    if error_code % 10 != 0:
-        print(colored(f'succecfully solved with Radau solver', 'green'))
     
 # Calculations
     if t_int[1] != 1.0: 
@@ -810,7 +856,6 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
             ax.set_xlabel('$t$ [ms]')
         ax.set_ylabel('Pressure excitation [kPa]')
         if not presentation_mode: ax.grid()
-        ax.legend()
 
         plt.show()
 
@@ -875,8 +920,8 @@ class Make_dir:
         line = ''
         for element in array:
             element = str(element).replace(',', ' ').replace('[', '').replace(']', '')
-            if isinstance(element, (float, int)):
-                line += f'{float64(element): e}' + self.separator
+            if isinstance(element, float):
+                line += f'{float(element): e}' + self.separator
             else:     
                 line += element + self.separator
         return line[:-1]
@@ -884,7 +929,7 @@ class Make_dir:
     # writes a data dict into the currently opened file
     def write_line(self, data):
         line = self.list_to_string([data[key] for key in keys])
-        line += self.separator + self.list_to_string([x for x in data['x_initial'][:-1]] + [x for x in data['x_final'][:-1]] + [data['expansion_work'],data['dissipated_acoustic_energy'],data['energy_efficiency']])
+        line += self.separator + self.list_to_string([x for x in data['x_initial'][:-1]] + [x for x in data['x_final'][:-1]])
         self.file.write(line + '\n')
         self.lines += 1
         
@@ -894,7 +939,7 @@ class Make_dir:
         file = os.path.join(self.save_dir, file_base_name + '_data.csv')
         file = open(file, 'w')
         # write header line
-        line = self.list_to_string(keys + ['R_0', 'R_dot_0', 'T_0'] + ['c_' + specie + '_0' for specie in par.species] + ['R_last', 'R_dot_last', 'T_last'] + ['c_' + specie + '_last' for specie in par.species] + ['expansion work','dissipated_acoustic_energy','energy_efficiency (NH3)'])
+        line = self.list_to_string(keys + ['R_0', 'R_dot_0', 'T_0'] + ['c_' + specie + '_0' for specie in par.species] + ['R_last', 'R_dot_last', 'T_last'] + ['c_' + specie + '_last' for specie in par.species])
         file.write(line + '\n')
         # write data
         line = self.list_to_string([data[key]] for key in keys)
@@ -906,11 +951,11 @@ class Make_dir:
         file = os.path.join(self.save_dir, file_base_name + '_num_sol.csv')
         file = open(file, 'w')
         # write header line
-        line = self.list_to_string(['t', 'R_0', 'R_dot_0', 'T_0'] + ['c_' + specie + '_0' for specie in par.species] + ['R', 'R_dot', 'T'] + ['c_' + specie for specie in par.species] + ['expansion work','dissipated_acoustic_energy','energy_efficiency (NH3)'])
+        line = self.list_to_string(['t', 'R', 'R_dot', 'T'] + ['c_' + specie for specie in par.species] + ['dissipated_acoustic_energy'])
         file.write(line + '\n')
         # write data
         for i in range(len(num_sol.t)):
-            line = self.list_to_string([num_sol.t[i]] + list(num_sol.y[:-1, 0]) + list(num_sol.y[:-1, i]) + [data.expansion_work,num_sol.y[-1, i],1.0e-6 * (data.expansion_work+num_sol.y[-1,i]) / (1.0e-3 * num_sol.y[3+par.index['NH3'],i] * 4.0/3.0*np.pi*(100.0 *num_sol.y[0,i])**3 * par.W[par.index['NH3']])]) # [MJ/kg]  
+            line = self.list_to_string([num_sol.t[i]] + list(num_sol.y[:, i]))
             file.write(line + '\n')
         file.close()
     

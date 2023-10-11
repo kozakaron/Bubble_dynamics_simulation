@@ -23,7 +23,6 @@ def getExcitation(excitation_type='no_excitation'):
     if excitation_type == 'no_excitation':
         @njit(float64[:](float64, float64, float64[:]))
         def Excitation(t, P_amb, args):
-            P_amb = args[0]
             return np.array([P_amb, 0.0], dtype=float64)
         
         args = []

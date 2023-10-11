@@ -145,10 +145,12 @@ W = dict(
 )
 
 physical_constants = dict(
-    c_L = dict(value=1483.0, comment='Liquid sound speed [m/s]'),
+    c_L = dict(value=1483.0, comment='Liquid sound speed at 30 °C [m/s]'),
     rho_L = dict(value=998.2, comment='Liquid density [kg/m^3]'),
     sigma = dict(value=71.97e-3, comment='Surface tension [N/m]'),
-    mu_L = dict(value=0.001, comment='Dynamic viscosity [Pa*s]'),
+    mu_L = dict(value=0.001, comment='Dynamic viscosity at 30 °C and 1 atm [Pa*s]'),
+    P_v = dict(value=2338.1, comment='Saturated vapour pressure at 30 °C [Pa]'),
+    alfa_M = dict(value=0.35, comment='water accommodation coefficient [-]'),
     R_g = dict(value=8.31446, comment='Universal gas constant [J/mol/K]'),
     R_erg = dict(value=None, comment='Universal gas constant [erg/mol/K]'),
     R_cal = dict(value=None, comment='Universal gas constant [cal/mol/K]'),
