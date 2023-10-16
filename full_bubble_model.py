@@ -6,6 +6,7 @@ import numpy as np   # matrices, math
 from scipy.integrate import solve_ivp   # differential equation solver
 from scipy.signal import argrelmin   # loc min finding
 import time   # runtime measurement
+from datetime import datetime   # for accessing current datetime
 from numba import njit   # Just In Time compiler
 from numba.types import unicode_type, float64, float32, int64, int32   # JIT types
 from func_timeout import func_timeout, FunctionTimedOut   # for timeout
@@ -935,7 +936,7 @@ class Make_dir:
         
     # saves a numerical solution
     def write_solution(self, data, num_sol, file_base_name):
-    # create file containing data
+        # create file containing data
         file = os.path.join(self.save_dir, file_base_name + '_data.csv')
         file = open(file, 'w')
         # write header line
@@ -959,6 +960,19 @@ class Make_dir:
             file.write(line + '\n')
         file.close()
     
+    # save any string
+    def write_string(self, string, file_base_name):
+        # create file
+        file = os.path.join(self.save_dir, file_base_name + '.txt')
+        file = open(file, 'w')
+        # create header
+        now = datetime.now()
+        datetime_str = now.strftime('%Y.%m.%d %H:%M:%S (YYYY.MM.DD HH:MM:SS)')
+        file.write(f'Created: {datetime_str}\n')
+        # write string
+        file.write(string)
+        file.close()
+
     # create new file
     def new_file(self):
         if self.is_opened:
