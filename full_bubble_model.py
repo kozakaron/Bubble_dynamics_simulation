@@ -983,7 +983,7 @@ class Make_dir:
         self.number += 1
         self.lines = 0
         # write header line:
-        line = self.list_to_string(keys + ['R_0', 'R_dot_0', 'T_0'] + ['c_' + specie + '_0' for specie in par.species] + ['R_last', 'R_dot_last', 'T_last'] + ['c_' + specie + '_last' for specie in par.species] + ['expansion work','dissipated_acoustic_energy','energy_efficiency (NH3)'])
+        line = self.list_to_string(keys + ['R_0', 'R_dot_0', 'T_0'] + ['c_' + specie + '_0' for specie in par.species] + ['R_last', 'R_dot_last', 'T_last'] + ['c_' + specie + '_last' for specie in par.species])
         self.file.write(line + '\n')
     
     # close file
