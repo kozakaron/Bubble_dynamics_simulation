@@ -7,6 +7,8 @@ from scipy.integrate import solve_ivp   # differential equation solver
 from scipy.signal import argrelmin   # loc min finding
 import time   # runtime measurement
 from datetime import datetime   # for accessing current datetime
+import socket   # for accessing computer name
+import psutil   # get system information
 from numba import njit   # Just In Time compiler
 from numba.types import unicode_type, float64, float32, int64, int32   # JIT types
 from func_timeout import func_timeout, FunctionTimedOut   # for timeout
@@ -32,10 +34,10 @@ except:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = True
+enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = False
-target_specie = 'H2' # Specie to calculate energy effiqiency
+target_specie = 'NH3' # Specie to calculate energy effiqiency
 excitation_type = 'no_excitation' # function to calculate pressure excitation
 
 """________________________________General________________________________"""
@@ -582,6 +584,11 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.expansion_work = 0.0
     data.dissipated_acoustic_energy = 0.0
     data.energy_efficiency = 0.0
+    data.enable_heat_transfer = enable_heat_transfer
+    data.enable_evaporation = enable_evaporation
+    data.enable_reactions = enable_reactions
+    data.enable_dissipated_energy = enable_dissipated_energy
+    data.excitation_type = excitation_type
     data.target_specie = target_specie
     errors, success = get_errors(error_code)
     if not success:
@@ -611,7 +618,9 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     return data
 
 # keys of data: (except x_final)
-keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'gases', 'fractions', 'surfactant', 'c_L', 'error_code', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency', 'target_specie'] + excitation_args
+keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'gases', 'fractions', 'surfactant', 'c_L',
+        'error_code', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency',
+        'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
 
 # This function prints the data dictionary in an organised way
 def print_data(data, print_it=True):
@@ -896,6 +905,30 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
 
 """________________________________Save to CSV________________________________"""
 
+def get_settings_and_info():
+    return f'''General information:
+    Created: {datetime.now().strftime("%Y.%m.%d %H:%M:%S (YYYY.MM.DD HH:MM:SS)")}
+    Computer name: {socket.gethostname()}
+    User name: {os.getlogin()}
+    Number of cores: {psutil.cpu_count(logical=False)}
+    Number of logical threads: {psutil.cpu_count(logical=True)}
+    CPU frequency: {psutil.cpu_freq().max: .2f} MHz
+    RAM size: {psutil.virtual_memory().total / 1024**2: .2f} MB
+
+parameters settings:
+    model = {par.model}
+    species = {par.species}
+    number of species = {par.K}
+    number of reactions = {par.I}
+
+full_bubble_model settings:
+    enable_heat_transfer = {enable_heat_transfer}
+    enable_evaporation = {enable_evaporation} 
+    enable_reactions = {enable_reactions}
+    enable_dissipated_energy = {enable_dissipated_energy}
+    target_specie = \'{target_specie}\' # Specie to calculate energy effiqiency
+    excitation_type = \'{excitation_type}\' # function to calculate pressure excitation'''
+
 class Make_dir:
     # constructor
     def __init__(self, folder_name, file_base_name='output_', separator=','):
@@ -964,11 +997,13 @@ class Make_dir:
     def write_string(self, string, file_base_name):
         # create file
         file = os.path.join(self.save_dir, file_base_name + '.txt')
-        file = open(file, 'w')
+        try:
+            file = open(file, 'x')
+        except FileExistsError:
+            print(colored(f'Error, file \'{file}\' already exists. ', 'red'))
+            return None
         # create header
-        now = datetime.now()
-        datetime_str = now.strftime('%Y.%m.%d %H:%M:%S (YYYY.MM.DD HH:MM:SS)')
-        file.write(f'Created: {datetime_str}\n')
+        file.write(get_settings_and_info())
         # write string
         file.write(string)
         file.close()
