@@ -137,7 +137,7 @@ def InitialCondition(cpar, evaporation=False):
     p_gas = p_E - cpar.P_v if evaporation else p_E
     lowpressure_error = lowpressure_warning = False
     if p_gas < 0.0:
-        print(colored('Error! The pressure of the gas is negative!', 'red'))
+        #print(colored('Error! The pressure of the gas is negative!', 'red'))
         lowpressure_error = True
     n_gas = p_gas * V_E / (par.R_g * cpar.T_inf) # [mol]
     
@@ -150,7 +150,7 @@ def InitialCondition(cpar, evaporation=False):
     P_amb_min = cpar.P_v if evaporation else 0.0 # [Pa]
     P_amb_min += p_gas - 2.0 * cpar.surfactant * par.sigma / R_0 # [Pa]
     if P_amb_min < cpar.P_v:
-        print(colored('Warning! The pressure during the expansion is lower, than the saturated water pressure', 'yellow'))
+        #print(colored('Warning! The pressure during the expansion is lower, than the saturated water pressure', 'yellow'))
         lowpressure_warning = True
 
     # Initial conditions
@@ -583,7 +583,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.m_target = 0.0
     data.expansion_work = 0.0
     data.dissipated_acoustic_energy = 0.0
-    data.energy_efficiency = 0.0
+    data.energy_efficiency = 1.0e30
     data.enable_heat_transfer = enable_heat_transfer
     data.enable_evaporation = enable_evaporation
     data.enable_reactions = enable_reactions
@@ -591,6 +591,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.excitation_type = excitation_type
     data.target_specie = target_specie
     errors, success = get_errors(error_code)
+    data.success = success
     if not success:
         return data
     
@@ -619,7 +620,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
 
 # keys of data: (except x_final)
 keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'gases', 'fractions', 'surfactant', 'c_L',
-        'error_code', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency',
+        'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency',
         'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
 
 # This function prints the data dictionary in an organised way
@@ -642,7 +643,7 @@ def print_data(data, print_it=True):
     for gas, fraction in zip(data.gases, data.fractions):
         text += f'{int(100*fraction)}% {par.species[gas]}, ' 
     text = text[:-2] + f'''\nSimulation info:
-    error_code ={data.error_code: .0f}
+    error_code ={data.error_code: .0f} (success = {data.success})
     elapsed_time ={data.elapsed_time: .2f} [s]
     steps ={data.steps: .0f} [-]'''
     
