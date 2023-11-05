@@ -268,6 +268,7 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, first_ste
     step_size = first_step
     step_num = 0
     steps_since_last_decay = 0
+    fail_num = 0
     start_point = de.dotdict(start_point)
     
     absolute_best = 1e30
@@ -276,7 +277,7 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, first_ste
     last_bests = []
 
     # learning
-    while step_num < step_limit and min_step < step_size:
+    while step_num < step_limit and min_step < step_size and fail_num < 5:
         # calculate gradient (try forward difference, if it fails, try central difference, if that fails too, repeat last step)
         gradient, current_datas = forward_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, log10=log10)
         if gradient is None:
@@ -290,6 +291,7 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, first_ste
                     start_point[key] += change[key]
                 start_point = squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
                 step_num += 1
+                failnum += 1
                 continue
 
         # calculate last best and print stuff
@@ -348,6 +350,7 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, first_ste
         datas.append(current_datas)
         step_num += 1
         steps_since_last_decay += 1
+        fail_num = 0
         if verbose:
             gradient_str = ''.join([f'{key}={gradient[key]: e}; ' for key in keys])
             print(f'\tgradient=({gradient_str})')
