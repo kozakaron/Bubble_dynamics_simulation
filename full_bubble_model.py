@@ -38,7 +38,7 @@ enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = False
 target_specie = 'NH3' # Specie to calculate energy effiqiency
-excitation_type = 'no_excitation' # function to calculate pressure excitation
+excitation_type = 'sin_impulse' # function to calculate pressure excitation
 
 """________________________________General________________________________"""
 
@@ -124,7 +124,7 @@ def InitialCondition(cpar, evaporation=False):
         cpar.gases = [cpar.gases]
     if type(cpar.fractions) != list:
         cpar.fractions = [cpar.fractions]
-    if sum(cpar.fractions) != 1.0:
+    if round(sum(cpar.fractions), 5) != 1.0:
         print(print(colored(f'Warning, in InitialCondition(), sum of cpar.fractions isn\'t 1: {cpar.fractions}','yellow')))
     if len(cpar.gases) != len(cpar.fractions):
         print(print(colored(f'Warning, in InitialCondition(), len(cpar.gases) != len(cpar.fractions): {cpar.gases} != {cpar.fractions}','yellow')))
