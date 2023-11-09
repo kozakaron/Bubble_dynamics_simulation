@@ -18,6 +18,7 @@ def getExcitation(excitation_type='no_excitation'):
      * 'slow_expansion': decrease from abient pressure to min_pressure (decay_time), followed by a slow increase back to ambient pressure (increase_time)
      * 'sin_impulse_flat_ends': sinusoid with only n amplitude cycles, the ends are smoothed out
      * 'sin_impulse': sinusoid with only n amplitude cycles, the ends are not smoothed out
+     * 'sin_impulse_logf': same as 'sin_impulse', but log10(freq) is used instead of freq
     """
 
     if excitation_type == 'no_excitation':
@@ -126,6 +127,28 @@ def getExcitation(excitation_type='no_excitation'):
         
         args = ['p_A', 'freq', 'n']
         units = ['Pa', 'Hz', '-']
+        return Excitation, args, units
+
+    elif excitation_type == 'sin_impulse_logf':
+        @njit(float64[:](float64, float64, float64[:]))
+        def Excitation(t, P_amb, args):
+            p_A, logf, n = args
+            freq = 10**logf
+            if t < 0.0:
+                p_Inf = P_amb
+                p_Inf_dot = 0.0
+            elif t > n / freq:
+                p_Inf = P_amb
+                p_Inf_dot = 0.0
+            else:
+                insin = 2.0*np.pi*freq
+                p_Inf = P_amb + p_A*np.sin(insin*t)
+                p_Inf_dot = p_A*insin*np.cos(insin*t)
+
+            return np.array([p_Inf, p_Inf_dot], dtype=np.float64)
+        
+        args = ['p_A', 'logf', 'n']
+        units = ['Pa', '-', '-']
         return Excitation, args, units
     
     else:

@@ -131,6 +131,12 @@ def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout, log10=Fals
     data['output'] = output
     return data, success
 
+def evaluate_kwargs(kwargs):
+    point = kwargs['point']
+    data, success = evaluate(**kwargs)
+    point['success'] = success
+    return [dict(data), dict(point), success]
+
 def norm_gradient(gradient, verbose=False):
     '''Calculates the norm of the gradient. Arguments:
      * gradient: dict, gradient of the point (will be changed)
@@ -175,7 +181,7 @@ def forward_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-
     
     # forward points
     for key in ranges:
-        if len(ranges[key]) < 2:
+        if len(ranges[key]) != 2:
             continue
         forward_point = de.copy(point)
         success = False
@@ -206,7 +212,7 @@ def central_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-
     gradient = dict()
 
     for key in ranges:
-        if len(ranges[key]) < 2:
+        if len(ranges[key]) != 2:
             continue
 
         # forward point
@@ -245,6 +251,7 @@ def central_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-
         if success_forward and success_backward:
             gradient[key] = (forward_data['output'] - backward_data['output']) / (forward_delta + backward_delta)
         else:
+            gradient[key] = 0.0
             print(colored(f'\tError, central difference failed', 'red'))
     
     return norm_gradient(gradient), datas
@@ -259,10 +266,10 @@ def search(kwargs):
 # TODO remove log10
 # TODO make 2D convergence plot
 # TODO remove todos
-def gradient_descent(ranges, to_optimize, start_point, step_limit=100, first_step=0.2, decay=0.5, min_step=1e-4, delta=1e-6, verbose=True, log10=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
+def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_until_decay=10, first_step=0.2, decay=0.5, min_step=1e-4, delta=1e-6, verbose=True, log10=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
     # setup
     solver_kwargs = dict(t_int=t_int, LSODA_timeout=LSODA_timeout, Radau_timeout=Radau_timeout)  # arguments for de.solve()
-    keys = [key for key in ranges if not len(ranges[key]) < 2]  # keys of the parameters we want to optimize
+    keys = [key for key in ranges if len(ranges[key]) == 2]  # keys of the parameters we want to optimize
 
     start = time.time()
     step_size = first_step
@@ -291,7 +298,7 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, first_ste
                     start_point[key] += change[key]
                 start_point = squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
                 step_num += 1
-                failnum += 1
+                fail_num += 1
                 continue
 
         # calculate last best and print stuff
@@ -310,6 +317,7 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, first_ste
             interval_width = abs(ranges[key][1] - ranges[key][0])
             change[key] = -step_size * gradient[key] * interval_width
 
+
         # decay
         # calculate where the next point would be
         trial_point = de.copy(start_point)
@@ -321,7 +329,6 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, first_ste
         current_datas.append(dict(data))
         if success:
             # decay if last decay was too long ago, can't be first decay this way: avoid back and forth steps
-            max_step_until_decay = ((1 / decay) + 1 - (1 / decay)%1)
             forced_decay = False
             if step_size != first_step and steps_since_last_decay > max_step_until_decay:
                 forced_decay = True

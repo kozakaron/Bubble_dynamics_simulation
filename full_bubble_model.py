@@ -38,7 +38,7 @@ enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = True
 target_specie = 'NH3' # Specie to calculate energy effiqiency
-excitation_type = 'sin_impulse' # function to calculate pressure excitation
+excitation_type = 'sin_impulse_logf' # function to calculate pressure excitation
 
 """________________________________General________________________________"""
 
@@ -928,7 +928,8 @@ full_bubble_model settings:
     enable_reactions = {enable_reactions}
     enable_dissipated_energy = {enable_dissipated_energy}
     target_specie = \'{target_specie}\' # Specie to calculate energy effiqiency
-    excitation_type = \'{excitation_type}\' # function to calculate pressure excitation'''
+    excitation_type = \'{excitation_type}\' # function to calculate pressure excitation
+'''
 
 class Make_dir:
     # constructor
