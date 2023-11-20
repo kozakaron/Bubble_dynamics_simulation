@@ -98,12 +98,11 @@ def squeeze_into_ranges(point, ranges, padding=0.0, verbose=False):
 
     return point
 
-def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout, log10=False):
+def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout):
     '''Runs the simulation, and returns with data extended with output (what we want to optimize). Arguments:
      * point: dict, control parameter which we want to evaluate
      * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
      * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
-     * log10: bool, True if we want to optimize the log10 of the output, False otherwise
      
      Returns:
       * data: dict, simulation results from de.get_data()
@@ -125,8 +124,6 @@ def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout, log10=Fals
         output = 1.0e30
     elif output < 0.0 and data['expansion_work'] >= 0.0:
         output = 1.0e30
-    if log10:
-        output = np.log10(output)
     point['output'] = output
     data['output'] = output
     return data, success
@@ -165,17 +162,27 @@ def norm_gradient(gradient, verbose=False):
 
 """________________________________Calculate_gradient________________________________"""
 
-# TODO implement verbose
-def forward_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-6, log10=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
-    #keys = ['R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'surfactant'] + de.excitation_args
+def forward_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-6, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300, verbose=True):
+    '''Calculate the normed gradient of a point with forward difference. Arguments:
+     * point: dict, cpar
+     * ranges: dict, ranges of the parameters ([single_value] or [min, max])
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * delta: float, step size for the finite difference
+     * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
+     * verbose: bool, print stuff
+
+    Returns:
+     * gradient: dict, normed gradient vector
+     * datas: list of dicts, simulation results from de.get_data()
+    '''
     datas = []
     gradient = dict()
 
     # central point
     central_point = de.copy(point)
-    central_data, success = evaluate(central_point, to_optimize, t_int, LSODA_timeout=30, Radau_timeout=300, log10=log10)
+    central_data, success = evaluate(central_point, to_optimize, t_int, LSODA_timeout=30, Radau_timeout=300)
     if not success:
-        print(colored(f'\tError, central point failed', 'red'))
+        if verbose: print(colored(f'\tError, central point failed', 'red'))
         return None, None
     datas.append(central_data)
     
@@ -190,11 +197,11 @@ def forward_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-
         while not success and trial_num < 3:
             value = point[key] + current_delta * abs(ranges[key][1] - ranges[key][0])
             forward_point[key] = value
-            forward_data, success = evaluate(forward_point, to_optimize, t_int, LSODA_timeout, Radau_timeout, log10=log10)
+            forward_data, success = evaluate(forward_point, to_optimize, t_int, LSODA_timeout, Radau_timeout)
             datas.append(forward_data)
             trial_num += 1
             if not success: # increase delta, if evaluation failed
-                print(colored(f'\tWarning, forward point failed, {trial_num=}; {current_delta=}', 'yellow'))
+                if verbose: print(colored(f'\tWarning, forward point failed, {trial_num=}; {current_delta=}', 'yellow'))
                 current_delta *= 2
                 continue
 
@@ -206,8 +213,19 @@ def forward_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-
     
     return norm_gradient(gradient), datas
 
-def central_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-6, log10=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
-    #keys = ['R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'surfactant'] + de.excitation_args
+def central_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-6, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300, verbose=True):
+    '''Calculate the normed gradient of a point with central difference. Arguments:
+     * point: dict, cpar
+     * ranges: dict, ranges of the parameters ([single_value] or [min, max])
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * delta: float, step size for the finite difference
+     * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
+     * verbose: bool, print stuff
+
+    Returns:
+     * gradient: dict, normed gradient vector
+     * datas: list of dicts, simulation results from de.get_data()
+    '''
     datas = []
     gradient = dict()
 
@@ -223,11 +241,11 @@ def central_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-
         while not success_forward and trial_num < 3:
             value = point[key] + forward_delta * abs(ranges[key][1] - ranges[key][0])
             forward_point[key] = value
-            forward_data, success_forward = evaluate(forward_point, to_optimize, t_int, LSODA_timeout, Radau_timeout, log10=log10)
+            forward_data, success_forward = evaluate(forward_point, to_optimize, t_int, LSODA_timeout, Radau_timeout)
             trial_num += 1
             datas.append(forward_data)
             if not success_forward: # increase delta, if evaluation failed
-                print(colored(f'\tWarning, forward point failed, {trial_num=}; {forward_delta=}', 'yellow'))
+                if verbose: print(colored(f'\tWarning, forward point failed, {trial_num=}; {forward_delta=}', 'yellow'))
                 forward_delta *= 2
                 continue
 
@@ -239,11 +257,11 @@ def central_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-
         while success_forward and not success_backward and trial_num < 3:
             value = point[key] - backward_delta * abs(ranges[key][1] - ranges[key][0])
             backward_point[key] = value
-            backward_data, success_backward = evaluate(backward_point, to_optimize, t_int, LSODA_timeout, Radau_timeout, log10=log10)
+            backward_data, success_backward = evaluate(backward_point, to_optimize, t_int, LSODA_timeout, Radau_timeout)
             trial_num += 1
             datas.append(backward_data)
             if not success_backward: # increase delta, if evaluation failed
-                print(colored(f'\tWarning, backward point failed, {trial_num=}; {backward_delta=}', 'yellow'))
+                if verbose: print(colored(f'\tWarning, backward point failed, {trial_num=}; {backward_delta=}', 'yellow'))
                 backward_delta *= 2
                 continue
 
@@ -252,21 +270,38 @@ def central_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-
             gradient[key] = (forward_data['output'] - backward_data['output']) / (forward_delta + backward_delta)
         else:
             gradient[key] = 0.0
-            print(colored(f'\tError, central difference failed', 'red'))
+            if verbose: print(colored(f'\tError, central difference failed', 'red'))
     
     return norm_gradient(gradient), datas
     
 """________________________________Search________________________________"""
 
 def search(kwargs):
+    '''Call gradient_descent() with a dictionary containing the arguments.'''
     return gradient_descent(**kwargs)
 
-# TODO describtions
-# TODO verbose
-# TODO remove log10
-# TODO make 2D convergence plot
-# TODO remove todos
-def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_until_decay=10, first_step=0.2, decay=0.5, min_step=1e-4, delta=1e-6, verbose=True, log10=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
+def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_until_decay=10, first_step=0.2, decay=0.5, min_step=1e-4, delta=1e-6, verbose=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
+    '''Gradient search. Starts at start_point, always go in the direction of the local gradient. Step size decays, if the output at the next step would
+    bigger then at the current step, or if too many steps were taken without decay (to avoid back &forth stepping). Search ends, if the step_size
+    decays to be smaller than min_step*interval_width, or if gradient fails repeatedly.     Arguments:
+     * ranges: dict, ranges of the parameters ([single_value] or [min, max])
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * start_point: dict, cpar where the search starts
+     * step_limit: int, maximum number of steps
+     * max_step_until_decay: int, maximum number of steps without decay
+     * first_step: float, first step size
+     * decay: float, decay rate
+     * min_step: float, minimum step size
+     * delta: float, step size for the finite difference
+     * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
+     * verbose: bool, print stuff
+
+    Returns:
+     * datas: list of dicts, simulation results from de.get_data()
+     * last_bests: list of floats, list of the best outputs in each step
+     * elapsed_time: float, elapsed time in seconds
+    '''
+
     # setup
     solver_kwargs = dict(t_int=t_int, LSODA_timeout=LSODA_timeout, Radau_timeout=Radau_timeout)  # arguments for de.solve()
     keys = [key for key in ranges if len(ranges[key]) == 2]  # keys of the parameters we want to optimize
@@ -286,9 +321,9 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_
     # learning
     while step_num < step_limit and min_step < step_size and fail_num < 5:
         # calculate gradient (try forward difference, if it fails, try central difference, if that fails too, repeat last step)
-        gradient, current_datas = forward_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, log10=log10)
+        gradient, current_datas = forward_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, verbose=verbose)
         if gradient is None:
-            gradient, current_datas = central_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, log10=log10)
+            gradient, current_datas = central_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, verbose=verbose)
         if gradient is None:
             print(colored(f'\tError, gradient can not be calculated in point {start_point}', 'red'))
             if step_num == 0:
@@ -324,7 +359,7 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_
         for key in keys:
             trial_point[key] += change[key]
         trial_point = squeeze_into_ranges(trial_point, ranges, padding=10.0*delta)
-        data, success = evaluate(trial_point, to_optimize, **solver_kwargs, log10=log10)
+        data, success = evaluate(trial_point, to_optimize, **solver_kwargs)
         next_output = data['output']
         current_datas.append(dict(data))
         if success:
@@ -350,7 +385,7 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_
             start_point[key] += change[key]
         start_point = squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
         if verbose:
-            data, success = evaluate(start_point, to_optimize, **solver_kwargs, log10=log10)
+            data, success = evaluate(start_point, to_optimize, **solver_kwargs)
             print(f'\toutput  ={data["output"]}; success={success}')
         
         # print stuff
