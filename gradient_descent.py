@@ -116,6 +116,7 @@ def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout):
     cpar = de.dotdict(point)
     num_sol, error_code, elapsed_time = de.solve(cpar, t_int, LSODA_timeout, Radau_timeout)   # simulation without plotting
     data = de.get_data(cpar, num_sol, error_code, elapsed_time)   # post processing
+    del num_sol
     _, success = de.get_errors(error_code)
 
     # return value to optimize
@@ -280,11 +281,12 @@ def search(kwargs):
     '''Call gradient_descent() with a dictionary containing the arguments.'''
     return gradient_descent(**kwargs)
 
-def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_until_decay=10, first_step=0.2, decay=0.5, min_step=1e-4, delta=1e-6, verbose=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
+def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max_step_until_decay=10, first_step=0.2, decay=0.5, min_step=1e-4, delta=1e-6, verbose=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
     '''Gradient search. Starts at start_point, always go in the direction of the local gradient. Step size decays, if the output at the next step would
     bigger then at the current step, or if too many steps were taken without decay (to avoid back &forth stepping). Search ends, if the step_size
     decays to be smaller than min_step*interval_width, or if gradient fails repeatedly.     Arguments:
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
+     * path: str, save location
      * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
      * start_point: dict, cpar where the search starts
      * step_limit: int, maximum number of steps
@@ -303,6 +305,8 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_
     '''
 
     # setup
+    file = de.Make_dir(path)
+    file.new_file()
     solver_kwargs = dict(t_int=t_int, LSODA_timeout=LSODA_timeout, Radau_timeout=Radau_timeout)  # arguments for de.solve()
     keys = [key for key in ranges if len(ranges[key]) == 2]  # keys of the parameters we want to optimize
 
@@ -315,7 +319,6 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_
     
     absolute_best = 1e30
     last_best = 1e30
-    datas = []
     last_bests = []
 
     # learning
@@ -340,7 +343,6 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_
         last_best = min([data['output'] for data in current_datas])
         last_bests.append(last_best)
         absolute_best = min(absolute_best, last_best)
-        current_datas = [dict(data) for data in current_datas]
         if verbose:
             print(colored(f'{step_num}. step; {last_best=: .3e}; {absolute_best=: .3e}; {step_size=: .4f}', 'green'))
             point_str = ''.join([f'{key}={start_point[key]: e}; ' for key in keys if isinstance(start_point[key], float)])
@@ -361,7 +363,7 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_
         trial_point = squeeze_into_ranges(trial_point, ranges, padding=10.0*delta)
         data, success = evaluate(trial_point, to_optimize, **solver_kwargs)
         next_output = data['output']
-        current_datas.append(dict(data))
+        current_datas.append(data)
         if success:
             # decay if last decay was too long ago, can't be first decay this way: avoid back and forth steps
             forced_decay = False
@@ -389,7 +391,10 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_
             print(f'\toutput  ={data["output"]}; success={success}')
         
         # print stuff
-        datas.append(current_datas)
+        for data in current_datas:
+            file.write_line(data)
+            del data
+        del current_datas
         step_num += 1
         steps_since_last_decay += 1
         fail_num = 0
@@ -401,4 +406,5 @@ def gradient_descent(ranges, to_optimize, start_point, step_limit=100, max_step_
 
     end = time.time()
     elapsed_time = end-start
-    return datas, last_bests, elapsed_time
+    file.close()
+    return last_bests, elapsed_time
