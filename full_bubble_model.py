@@ -38,7 +38,7 @@ enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = True
 target_specie = 'NH3' # Specie to calculate energy effiqiency
-excitation_type = 'sin_impulse_logf' # function to calculate pressure excitation
+excitation_type = 'no_excitation' # function to calculate pressure excitation
 
 """________________________________General________________________________"""
 
@@ -78,31 +78,44 @@ print(f'enable heat transfer: {colorTF(enable_heat_transfer)}\tenable evaporatio
 if target_specie not in par.species:
     print(colored(f'Error, target specie \'{target_specie}\' not found in parameters.py', 'red'))
     
-def example_cpar():
-    '''Prints an example of the control parameter dictionary.'''
-    print(f'''cpar = de.dotdict(dict(
-    ID = 0,                           # ID of control parameter (not used during calculation)
-  # Initial conditions:
-    R_E = 10.0e-6,                    # bubble equilibrium radius [m]
-    ratio = 1.0,                      # initial radius / equilibrium radius R_0/R_E [-]
-    gases = [par.index['O2']],        # indexes of species in initial bubble (list of species indexes)
-    fractions = [1.0],                # molar fractions of species in initial bubble (list of fractions for every gas)
-  # Ambient parameters:
-    P_amb = 1.0 * par.atm2Pa,         # ambient pressure [Pa]
-    T_inf = 30.0 + par.absolute_zero, # ambient temperature [K]
-  # Liquid parameters:
-    alfa_M = par.alfa_M,              # water accommodation coefficient [-]
-    P_v = par.P_v,                    # vapour pressure [Pa]
-    mu_L = par.mu_L,                  # dynamic viscosity [Pa*s]
-    c_L = par.c_L,                    # sound speed [m/s]
-    surfactant = 1.0,                 # surfactant (surface tension modfier) [-]
-  # Excitation parameters: (excitation_type = {excitation_type})''')
-    for arg, unit in zip(excitation_args, excitation_units):
-        spaces = ''.join([' ' for _ in range(25 - len(arg))])
-        print(f'    {arg:} = 0.0, {spaces} # [{unit}]')
-    print(f'))\n\n# Calculate pressure/temperature dependent parameters:')
-    print('cpar.mu_L = de.Viscosity(cpar.T_inf)')
-    print('cpar.P_v = de.VapourPressure(cpar.T_inf)')
+def example_cpar(normal_dict=False):
+    '''Provides an example of the control parameter dictionary. Use print_cpar() to print it. Parameters:
+    * normal_dict: if True, returns a normal dictionary, else returns a dotdict
+    
+    Returns:
+    * cpar: control parameter dictionary'''
+    
+    cpar = dict(
+        ID = 0,                            # ID of control parameter (not used during calculation)
+    # Initial conditions:
+        R_E = 10.0e-6,                     # bubble equilibrium radius [m]
+        ratio = 1.0,                       # initial radius / equilibrium radius R_0/R_E [-]
+        gases = [0],                       # indexes of species in initial bubble (list of species indexes)
+        fractions = [1.0],                 # molar fractions of species in initial bubble (list of fractions for every gas)
+    # Ambient parameters:
+        P_amb = 1.0 * par.atm2Pa,          # ambient pressure [Pa]
+        T_inf = 20.0 + par.absolute_zero,  # ambient temperature [K]
+    # Liquid parameters:
+        alfa_M = par.alfa_M,               # water accommodation coefficient [-]
+        P_v = par.P_v,                     # vapour pressure [Pa]
+        mu_L = par.mu_L,                   # dynamic viscosity [Pa*s]
+        c_L = par.c_L,                     # sound speed [m/s]
+        surfactant = 1.00,                 # surfactant (surface tension modfier) [-]
+    )
+
+    for arg in excitation_args:
+        cpar[arg] = 0.0
+    if target_specie == 'NH3':
+        cpar['gases'] = [par.index['H2'], par.index['N2']]
+        cpar['fractions'] = [0.75, 0.25]
+    else:
+        cpar['gases'] = [par.index['O2']]
+        cpar['fractions'] = [1.0]
+
+    if normal_dict:
+        return cpar
+    else:
+        return dotdict(cpar)
 
 @njit(float64(float64))
 def VapourPressure(T): # [K]
@@ -623,26 +636,76 @@ keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'gases'
         'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency',
         'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
 
+# used in print_cpar
+def print_line(name, value, comment, print_it=False):
+    text = f'    {name} = '
+    if type(value) == str:
+        text += f'\'{value}\','
+    elif type(value) == int:
+        text += f'{value},'
+    elif type(value) == float:
+        if abs(value) < 1e-12:
+            text += f'0.0,'
+        elif abs(value) < 1e-6:
+            text += f'{value: .6e},'
+        elif abs(value) < 1e-3:
+            text += f'{value: .8f},'
+        elif abs(value) < 1.0:
+            text += f'{value: .4f},'
+        else:
+            text += f'{value: .2f},'
+    elif type(value) == np.ndarray or type(value) == list:
+        if name == 'gases':
+            gases= ''.join([f'par.index[\'{par.species[i]}\'], ' for i in value])
+            text += f'[{gases[:-2]}],'
+        if name == 'fractions':
+            fractions = ''.join([f'{i}, ' for i in value])
+            text += f'[{fractions[:-2]}],'
+    else:
+        text += f'{value},'
+
+    if print_it:
+        print(f'{text: <48} # {comment}')
+    else:
+        return f'{text: <48} # {comment}\n'
+
+# print cpar in an organised way (works with dict, dotdict)
+def print_cpar(cpar, without_code=False, print_it=True):
+    text = ''
+    if not without_code:
+        text += f'cpar = de.dotdict(dict(\n'
+    text += print_line('ID', int(cpar['ID']), 'ID of control parameter (not used during calculation)')
+    text += f'  # Initial conditions:\n'
+    text += print_line('R_E', float(cpar['R_E']), 'bubble equilibrium radius [m]')
+    text += print_line('ratio', float(cpar['ratio']), 'initial radius / equilibrium radius R_0/R_E [-]')
+    text += print_line('gases', cpar['gases'], 'indexes of species in initial bubble (list of species indexes)')
+    text += print_line('fractions', cpar['fractions'], 'molar fractions of species in initial bubble (list of fractions for every gas)')
+    text += f'  # Ambient parameters:\n'
+    text += print_line('P_amb', float(cpar['P_amb']), 'ambient pressure [Pa]')
+    text += print_line('T_inf', float(cpar['T_inf']), 'ambient temperature [K]')
+    text += f'  # Liquid parameters:\n'
+    text += print_line('alfa_M', float(cpar['alfa_M']), 'water accommodation coefficient [-]')
+    text += print_line('P_v', float(cpar['P_v']), 'vapour pressure [Pa]')
+    text += print_line('mu_L', float(cpar['mu_L']), 'dynamic viscosity [Pa*s]')
+    text += print_line('c_L', float(cpar['c_L']), 'sound speed [m/s]')
+    text += print_line('surfactant', float(cpar['surfactant']), 'surfactant (surface tension modfier) [-]')
+    text += f'  # Excitation parameters: (excitation_type = {excitation_type})\n'
+    for arg, unit in zip(excitation_args, excitation_units):
+        text += print_line(arg, cpar[arg], f'[{unit}]')
+    if not without_code:
+        text += f'))\n\n# Calculate pressure/temperature dependent parameters:\n'
+        text += f'cpar.mu_L = de.Viscosity(cpar.T_inf)\n'
+        text += f'cpar.P_v = de.VapourPressure(cpar.T_inf)\n'
+    if print_it:
+        print(text)
+    else:
+        return text
+
 # This function prints the data dictionary in an organised way
-def print_data(data, print_it=True):
-    text = f'''Control parameters:
-    ID ={data.ID: .0f}
-    R_E ={1.0e6*data.R_E: .2f} [um]
-    ratio ={data.ratio: .2f} [-]
-    P_amb ={1.0e-5*data.P_amb: .2f} [bar]
-    alfa_M ={data.alfa_M: .2f} [-]
-    T_inf ={data.T_inf - 273.15: .2f} [°C]
-    P_v ={data.P_v: .2f} [Pa]
-    mu_L ={1000.0*data.mu_L: .2f} [mPa*s]
-    surfactant ={data.surfactant: .2f} [-]    
-    excitation = \'{excitation_type}\'
-    ('''
-    for name, unit in zip(excitation_args, excitation_units):
-        text += f'{name} ={data[name]: .2f} [{unit}]; '
-    text = text[:-2] + f')\n    Initial content: '
-    for gas, fraction in zip(data.gases, data.fractions):
-        text += f'{int(100*fraction)}% {par.species[gas]}, ' 
-    text = text[:-2] + f'''\nSimulation info:
+def print_data(cpar, data, print_it=True):
+    text = f'Control parameters:\n'
+    text += print_cpar(cpar, without_code=True, print_it=False)
+    text += f'''\nSimulation info:
     error_code ={data.error_code: .0f} (success = {data.success})
     elapsed_time ={data.elapsed_time: .2f} [s]
     steps ={data.steps: .0f} [-]'''
@@ -703,6 +766,8 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
      * show_legend: if True, the legend will be visible with every single species (default: False)
      * show_cpar: if True, the control parameters will be printed on the plot (default: False)
     """
+    if type(cpar) == dict:
+        cpar = dotdict(cpar)
 
     num_sol, error_code, elapsed_time = solve(cpar, t_int, LSODA_timeout, Radau_timeout)
     data = get_data(cpar, num_sol, error_code, elapsed_time)
@@ -710,7 +775,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
 # Print errors
     errors, success = get_errors(error_code, printit=True)
     if not success:
-        print_data(data)
+        print_data(cpar, data)
         return None
     
 # Calculations
@@ -824,7 +889,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
         color, name, n_final = text
         # spaceing
         if n_final < 1e-24: continue
-        limit = 5.0 if presentation_mode else 3.0
+        limit = 5.5 if presentation_mode else 3.5
         if last_n_final / n_final < limit:
             n_final = last_n_final / limit
         last_n_final = n_final
@@ -900,7 +965,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
             print(print(colored(f'Error in saving {base_name}_1.png','red')))
 
 # print data
-    print_data(data)
+    print_data(cpar, data)
     return None
            
 
