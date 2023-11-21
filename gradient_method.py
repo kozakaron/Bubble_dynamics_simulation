@@ -97,6 +97,12 @@ def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout):
     ret = {key: de.copy(data[key]) for key in data}
     return ret, success
 
+def evaluate_kwargs(kwargs):
+    point = kwargs['point']
+    data, success = evaluate(**kwargs)
+    point['success'] = success
+    return [dict(data), dict(point), success]
+
 
 """________________________________Search________________________________"""
 

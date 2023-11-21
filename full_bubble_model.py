@@ -36,7 +36,7 @@ except:
 enable_heat_transfer = True
 enable_evaporation = False
 enable_reactions = True
-enable_dissipated_energy = True
+enable_dissipated_energy = False
 target_specie = 'NH3' # Specie to calculate energy effiqiency
 excitation_type = 'no_excitation' # function to calculate pressure excitation
 

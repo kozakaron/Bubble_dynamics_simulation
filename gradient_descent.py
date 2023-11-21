@@ -286,7 +286,7 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
     bigger then at the current step, or if too many steps were taken without decay (to avoid back &forth stepping). Search ends, if the step_size
     decays to be smaller than min_step*interval_width, or if gradient fails repeatedly.     Arguments:
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
-     * path: str, save location
+     * path: str, save location. If None or '', datas will be returned (not recommended due to memory usage), otherwise last data will be returned
      * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
      * start_point: dict, cpar where the search starts
      * step_limit: int, maximum number of steps
@@ -299,14 +299,18 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
      * verbose: bool, print stuff
 
     Returns:
-     * datas: list of dicts, simulation results from de.get_data()
+     * datas: list of dicts, simulation results from de.get_data() if path is None or last data if path is given
      * last_bests: list of floats, list of the best outputs in each step
      * elapsed_time: float, elapsed time in seconds
     '''
 
     # setup
-    file = de.Make_dir(path)
-    file.new_file()
+    if path is None or path == '':
+        all_datas = []
+        file = None
+    else:
+        file = de.Make_dir(path)
+        file.new_file()
     solver_kwargs = dict(t_int=t_int, LSODA_timeout=LSODA_timeout, Radau_timeout=Radau_timeout)  # arguments for de.solve()
     keys = [key for key in ranges if len(ranges[key]) == 2]  # keys of the parameters we want to optimize
 
@@ -330,7 +334,7 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
         if gradient is None:
             print(colored(f'\tError, gradient can not be calculated in point {start_point}', 'red'))
             if step_num == 0:
-                return [[]], [1.0e30], time.time()-start
+                return None, [1.0e30], time.time()-start
             else:
                 for key in keys:
                     start_point[key] += change[key]
@@ -344,7 +348,7 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
         last_bests.append(last_best)
         absolute_best = min(absolute_best, last_best)
         if verbose:
-            print(colored(f'{step_num}. step; {last_best=: .3e}; {absolute_best=: .3e}; {step_size=: .4f}', 'green'))
+            print(colored(f'{step_num}. step; {last_best=: .5e}; {absolute_best=: .5e}; {step_size=: .5f}', 'green'))
             point_str = ''.join([f'{key}={start_point[key]: e}; ' for key in keys if isinstance(start_point[key], float)])
             print(f'\tpoint   =({point_str})')
 
@@ -361,9 +365,9 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
         for key in keys:
             trial_point[key] += change[key]
         trial_point = squeeze_into_ranges(trial_point, ranges, padding=10.0*delta)
-        data, success = evaluate(trial_point, to_optimize, **solver_kwargs)
-        next_output = data['output']
-        current_datas.append(data)
+        trial_point_data, success = evaluate(trial_point, to_optimize, **solver_kwargs)
+        next_output = trial_point_data['output']
+        current_datas.append(trial_point_data)
         if success:
             # decay if last decay was too long ago, can't be first decay this way: avoid back and forth steps
             forced_decay = False
@@ -386,25 +390,32 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
         for key in keys:
             start_point[key] += change[key]
         start_point = squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
+        next_point_data, success = evaluate(start_point, to_optimize, **solver_kwargs)
         if verbose:
-            data, success = evaluate(start_point, to_optimize, **solver_kwargs)
-            print(f'\toutput  ={data["output"]}; success={success}')
+            print(f'\toutput  ={next_point_data["output"]}; success={success}')
         
         # print stuff
-        for data in current_datas:
-            file.write_line(data)
-            del data
+        if file is not None:
+            for data in current_datas:
+                file.write_line(data)
+                del data
+        else:
+            all_datas.append(current_datas)
         del current_datas
+
         step_num += 1
         steps_since_last_decay += 1
         fail_num = 0
         if verbose:
-            gradient_str = ''.join([f'{key}={gradient[key]: e}; ' for key in keys])
+            gradient_str = ''.join([f'{key}={gradient[key]: 6.4f}; ' for key in keys])
             print(f'\tgradient=({gradient_str})')
             change_str = ''.join([f'{key}={change[key]: e}; ' for key in keys])
             print(f'\tchange  =({change_str})')
 
     end = time.time()
     elapsed_time = end-start
-    file.close()
-    return last_bests, elapsed_time
+    if file is not None:
+        file.close()
+        return dict(next_point_data), last_bests, elapsed_time
+    else:
+        return all_datas, last_bests, elapsed_time
