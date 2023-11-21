@@ -31,23 +31,6 @@ Recommended usage:
    usage: print('Universal gas constant =', par.R_g)
 \"\"\"'''
 
-physical_constants = '''c_L = 1483.0       # Liquid sound speed [m/s]
-rho_L = 998.2      # Liquid density [kg/m^3]
-sigma = 71.97e-3   # Surface tension [N/m]
-mu_L = 0.001       # Dynamic viscosity [Pa*s]
-R_v = 461.5227     # Specific gas constant of water [J/kg/K]
-
-R_g = 8.31446      # Universal gas constant [J/mol/K]
-R_erg = 8.31446e7  # Universal gas constant [erg/mol/K]
-R_cal = 1.9872     # Universal gas constant [cal/mol/K]
-N_A = 6.02214e23   # Avogadro's number [-]
-h = 6.62607015e-34 # Planck constant [m^2*kg/s]'''
-
-valid_elements='''H, HE, LI, BE, B, C, N, O, F, NE, NA, MG, AL, SI, P, S, CL, AR, K, CA, SC, TI, V, CR, MN, FE, CO, NI, CU, ZN, GA,
-GE, AS, SE, BR, KR, RB, SR, Y, ZR, NB, MO, TC, RU, RH, PD, AG, CD, IN, SN, SB, TE, I, XE, CS, BA, LA, CE, PR, ND,
-PM, SM, EU, GD, TB, DY, HO, ER, TM, YB, LU, HF, TA, W, RE, OS, IR, PT, AU, HG, TL, PB, BI, PO, AT, RN, FR, RA,
-AC, TH, PA, U, NP, PU, AM, CM, BK, CF, ES, FM, D, E'''
-
 # molar masses [g/mol]
 W = dict(
   # 1. row
@@ -160,3 +143,33 @@ W = dict(
     D=2.014, # deuterium
     E=5.4858e-4, # electron
 )
+
+physical_constants = dict(
+    c_L = dict(value=1483.0, comment='Liquid sound speed at 30 °C [m/s]'),
+    rho_L = dict(value=998.2, comment='Liquid density [kg/m^3]'),
+    sigma = dict(value=71.97e-3, comment='Surface tension [N/m]'),
+    mu_L = dict(value=0.001, comment='Dynamic viscosity at 30 °C and 1 atm [Pa*s]'),
+    P_v = dict(value=2338.1, comment='Saturated vapour pressure at 30 °C [Pa]'),
+    alfa_M = dict(value=0.35, comment='water accommodation coefficient [-]'),
+    R_g = dict(value=8.31446, comment='Universal gas constant [J/mol/K]'),
+    R_erg = dict(value=None, comment='Universal gas constant [erg/mol/K]'),
+    R_cal = dict(value=None, comment='Universal gas constant [cal/mol/K]'),
+    N_A = dict(value=6.02214e23, comment='Avogadro\'s number [-]'),
+    h = dict(value=6.62607015e-34, comment='Planck constant [m^2*kg/s]'),
+    R_v = dict(value=None, comment='Specific gas constant of water [J/kg/K]'),
+    erg2J = dict(value=1e-7, comment='Conversion factor from erg to J'),
+    cal2J = dict(value=4.184, comment='Conversion factor from cal to J'),
+    atm2Pa = dict(value=101325.0, comment='Conversion factor from atm to Pa'),
+    bar2Pa = dict(value=1.0e5, comment='Conversion factor from bar to Pa'),
+    absolute_zero = dict(value=273.15, comment='Zero °C in Kelvin'),
+)
+
+def calculate_missing_constants():
+    physical_constants['R_erg']['value'] = round(physical_constants['R_g']['value'] / physical_constants['erg2J']['value'], 1)
+    physical_constants['R_cal']['value'] = round(physical_constants['R_g']['value'] / physical_constants['cal2J']['value'], 6)
+    physical_constants['R_v']['value'] = round(1000.0 * physical_constants['R_g']['value'] / (2*W['H'] + W['O']), 6)
+
+valid_elements='''H, HE, LI, BE, B, C, N, O, F, NE, NA, MG, AL, SI, P, S, CL, AR, K, CA, SC, TI, V, CR, MN, FE, CO, NI, CU, ZN, GA,
+GE, AS, SE, BR, KR, RB, SR, Y, ZR, NB, MO, TC, RU, RH, PD, AG, CD, IN, SN, SB, TE, I, XE, CS, BA, LA, CE, PR, ND,
+PM, SM, EU, GD, TB, DY, HO, ER, TM, YB, LU, HF, TA, W, RE, OS, IR, PT, AU, HG, TL, PB, BI, PO, AT, RN, FR, RA,
+AC, TH, PA, U, NP, PU, AM, CM, BK, CF, ES, FM, D, E'''

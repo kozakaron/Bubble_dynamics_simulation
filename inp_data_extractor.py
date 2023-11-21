@@ -1,11 +1,24 @@
+"""
+This program extracts data from .inp files and creates parameters.py
+Recommended usage:
+    importing: import inp_data_extractor as inp
+    usage: inp.extract(path)
+"""
+
 """________________________________Libraries________________________________"""
 
 import numpy as np
+import os
 from termcolor import colored
 try:
     import data
 except:
-    print(print(colored(f'Error, \'data.py\' not found', 'red')))
+    try:
+        import Bubble_dynamics_simulation.data as data
+    except:
+        print(colored(f'Error, \'data.py\' not found', 'red'))
+import importlib
+importlib.reload(data)
 
 comment = '!'
 
@@ -67,8 +80,9 @@ def print_array(array, width=0, comments=[], columns=[], max_len=0):
     remark = '#'
 
     text = ''
-    # 2D array
+    
     if isinstance(array[0], list):
+    # 2D array
         text += arr_opener + '\n'
         if columns != []:
             text += f'\t{remark}'
@@ -319,28 +333,36 @@ def get_reactions(lines, species):
     keywords = ['LOW', 'TROE', 'SRI', 'HIGH', 'REV', 'DUP', 'LT', 'TDEP', 'XSMI', 'PLOG', 'FORD', 'RORD', 'MOME', 'EXCI', 'JAN', '/']
     i = find('REAC', lines) + 1
 
-    while not 'END' in lines[i]:
+    while not 'END' in lines[i]: 
         reaction_line = lines[i]
         reaction_line = reaction_line.replace('<=>', '=')
         reaction_line = reaction_line.replace('=>', '>')
         reaction_line = separate(reaction_line, ' ')
         reactions.append(''.join(reaction_line[:-3]).replace('>', '=>'))
         numbers.append(len(reactions)-1)
-
         A.append(float(reaction_line[-3]))
         B.append(float(reaction_line[-2]))
         E.append(float(reaction_line[-1]))
-        i += 1
-
-        isPressureDependent = isTroe = isSRI = isPLOG = False
-        while any([keyword in lines[i] for keyword in keywords+['END']]):
+        
+        line = lines[i]
+        isThirdBody = isPressureDependent = isTroe = isSRI = isPLOG = False
+        isManualThirdBodyCoefficients = False
+        
+        if '(+M)=' in line.replace(' ',''):
+            isPressureDependent = True
+            isThirdBody = True
+        elif '+M=' in line.replace(' ',''): 
+            isThirdBody = True
+        
+        if not any([keyword in lines[i] for keyword in keywords+['END']]):
+            i += 1
             line = lines[i]
+        
+        while any([keyword in line for keyword in keywords+['END']]): #This cycle steps one reaction.
             if 'END' in line:
                 break
-            elif 'DUP' in line:
-                pass
             elif 'LOW' in line:
-                PressureDependentIndexes.append(numbers[-1])
+                isThirdBody = True
                 isPressureDependent = True
                 line = line.replace('LOW', '')
                 line = line.replace('/', '')
@@ -369,20 +391,20 @@ def get_reactions(lines, species):
             elif 'PLOG' in line:
                 if not isPLOG:
                     PlogIndexes.append(numbers[-1])
-                    Plog.append([])
                     isPLOG = True
                 line = line.replace('PLOG', '')
                 line = line.replace('MX', '')
                 line = line.replace('SP', '')
                 line = line.replace('/', '')
                 line = separate(line, ' ')
-                Plog[-1].append([float(line[-4]), float(line[-3]), float(line[-2]), float(line[-1])])
+            
+                Plog.append([float(line[-4]), float(line[-3]), float(line[-2]), float(line[-1])])
             elif '/' in line:
-                ThirdBodyIndexes.append(numbers[-1])
                 line = line.replace('/ ', ' ')
                 line = line.replace('/', ' ')
                 line = separate(line, ' ')
                 alfa_line = np.ones((len(species)), dtype=np.float64)
+                isManualThirdBodyCoefficients = True
                 j = 0
                 while j < len(line):
                     if line[j] in species:
@@ -391,27 +413,38 @@ def get_reactions(lines, species):
                         print(colored(f'Warning, third body \'{line[j]}\' is not in species in line {i} (\'{lines[i]}\') in reaction \'{reactions[-1]}\'', 'yellow'))
                     j += 2
                 alfa.append(alfa_line)
+            elif 'DUP' in line:
+                line = line.replace('DUP','')
             else:
                 keyword = keywords[[keyword in lines[i] for keyword in keywords].index(True)]
                 print(colored(f'Warning, keyword \'{keyword}\' is not supported in line {i} (\'{line}\')', 'yellow'))
-            i+= 1
+            if not any([keyword in line for keyword in keywords+['END']]):
+                i += 1
+                line = lines[i]
 
         if isPressureDependent:
+            PressureDependentIndexes.append(numbers[-1])
             if isTroe:
                 TroeIndexes.append(numbers[-1])
             elif isSRI:
                 SRIIndexes.append(numbers[-1])
             else:
                 LindemannIndexes.append(numbers[-1])
-        if isPLOG and len(Plog[-1]) != 3:
+        if isThirdBody:
+            ThirdBodyIndexes.append(numbers[-1])
+            if not isManualThirdBodyCoefficients:
+                alfa_line = np.ones((len(species)), dtype=np.float64)
+                alfa.append(alfa_line)
+        if isPLOG and len(Plog) % 3 != 0:
             print(colored(f'Warning, only 3 lines of PLOG is supported in reaction \'{reactions[-1]}\'', 'yellow'))
 
+        
     try:
-        Plog1 = np.array(Plog[0])
-        Plog2 = np.array(Plog[1])
-        Plog3 = np.array(Plog[2])
+        if len(Plog) == 0:
+            Plog.append([])
+        Plog = np.array(Plog)
     except:
-        Plog1 = Plog2 = Plog3 = [[]]
+        Plog = np.array([[]])
 
     if ReacConst == []: ReacConst = [[]]
     if Troe == []: Troe = [[]]
@@ -421,16 +454,16 @@ def get_reactions(lines, species):
     B = np.array(B)
     E = np.array(E)
     ReacConst = np.array(ReacConst)
-
+    
   # Correct units
     i = find('REAC', lines)
+    if len(PlogIndexes) != 0: Plog[:, 0] *= 1.0e5   # convert bar to Pa
     if 'MOLEC' in lines[i]: # MOLECULE
         print(colored(f'Note, pre-exponential factor is modified from units of [cm^3/molecule/s] to [cm^3/mol/s]', 'blue'))
         A /= 6.02214e23
         if len(PressureDependentIndexes) != 0: ReacConst[:, 0] /= 6.02214e23
-        Plog1[:, 1]  /= 6.02214e23
-        Plog2[:, 1]  /= 6.02214e23
-        Plog3[:, 1]  /= 6.02214e23
+        if len(PlogIndexes) != 0:
+            Plog[:, 1]  /= 6.02214e23
         # Avogadro's number: N_A = 6.02214e23 [-]
     elif 'MOL' in lines[i]:
         print(colored(f'Note, pre-exponential factor is modified from units of [cm^3/mol/s] to [cm^3/mol/s]', 'blue'))
@@ -441,44 +474,34 @@ def get_reactions(lines, species):
         E /= 1000.0 # [kcal/mol -> cal/mol]
         if len(PressureDependentIndexes) != 0: ReacConst[:, 2] /= 1000.0
         if len(PlogIndexes) != 0: 
-            Plog1[:, 3]  /= 1000.0
-            Plog2[:, 3]  /= 1000.0
-            Plog3[:, 3]  /= 1000.0
+            Plog[:, 3]  /= 1000.0
     elif 'JOU' in lines[i]:
         print(colored(f'Note, activation energy (E_i) is modified from units of [J/mol] to [cal/mol]', 'blue'))
         E /= 4.184 # [J/mol -> cal/mol]
         if len(PressureDependentIndexes) != 0: ReacConst[:, 2] /= 4.184
         if len(PlogIndexes) != 0: 
-            Plog1[:, 3]  /= 4.184
-            Plog2[:, 3]  /= 4.184
-            Plog3[:, 3]  /= 4.184
+            Plog[:, 3]  /= 4.184
     elif 'KJOU' in lines[i]:
         print(colored(f'Note, activation energy (E_i) is modified from units of [kJ/mol] to [cal/mol]', 'blue'))
         E *= 1000.0 # [kJ/mol -> J/mol]
         E /= 4.184 # [J/mol -> cal/mol]
         if len(PressureDependentIndexes) != 0: ReacConst[:, 2] *= 1000.0 / 4.184
         if len(PlogIndexes) != 0: 
-            Plog1[:, 3]  *= 1000.0 / 4.184
-            Plog2[:, 3]  *= 1000.0 / 4.184
-            Plog3[:, 3]  *= 1000.0 / 4.184
+            Plog[:, 3]  *= 1000.0 / 4.184
     elif 'KELV' in lines[i]:
         print(colored(f'Note, activation energy (E_i) is modified from units of [K] to [cal/mol]', 'blue'))
         E *= 1.9872 # [K -> cal/mol]
         if len(PressureDependentIndexes) != 0: ReacConst[:, 2] *= 1.9872
         if len(PlogIndexes) != 0: 
-            Plog1[:, 3]  *= 1.9872
-            Plog2[:, 3]  *= 1.9872
-            Plog3[:, 3]  *= 1.9872
-        # Universal gas constant: R_cal = 1.987 [cal/mol/K]
+            Plog[:, 3]  *= 1.9872
+        # Universal gas constant: impal = 1.987 [cal/mol/K]
     elif 'EVOL' in lines[i]:
         print(colored(f'Note, activation energy (E_i) is modified from units of [eV/mol] to [cal/mol]', 'blue'))
         E *= 1.602176634e-19 # [eV/mol -> J/mol]
         E /= 4.184 # [J/mol -> cal/mol]
         if len(PressureDependentIndexes) != 0: ReacConst[:, 2] *= 1.602176634e-19 / 4.184
         if len(PlogIndexes) != 0: 
-            Plog1[:, 3]  *= 1.602176634e-19 / 4.184
-            Plog2[:, 3]  *= 1.602176634e-19 / 4.184
-            Plog3[:, 3]  *= 1.602176634e-19 / 4.184
+            Plog[:, 3]  *= 1.602176634e-19 / 4.184
 
     for i in range(len(E)):
         E[i] = round(E[i], 5)
@@ -489,7 +512,7 @@ def get_reactions(lines, species):
                 LindemannIndexes, ReacConst,
                 TroeIndexes, Troe,
                 SRIIndexes, SRI,
-            PlogIndexes, Plog1, Plog2, Plog3)
+            PlogIndexes, Plog)
 
 """________________________________Reaction matrixes (nu)________________________________"""
 
@@ -523,7 +546,7 @@ def get_nu(reactions, species, W):
                 elif f == 'HV':
                     print(colored(f'Warning, photon (HV) in reaction {x} (\'{reactions[x]}\') is ignored', 'yellow'))
                 else:
-                    print(colored(f'Warning, \'{f}\' in reaction {x} (\'{reactions[x]}\') is not in species, the reaction is ignored', 'yellow'))
+                    print(colored(f'Warning, \'{f}\' in reaction {x} (\'{reactions[x]}\') is not in species, it is ignored', 'yellow'))
 
         for b in backward:
             num = 1
@@ -533,12 +556,12 @@ def get_nu(reactions, species, W):
             if b in species:
                 nu_backward[x][species.index(b)] += num
             else:
-                if f =='E':
+                if b =='E':
                     print(colored(f'Warning, electron (E) in reaction {x} (\'{reactions[x]}\') is ignored', 'yellow'))
-                elif f == 'HV':
+                elif b == 'HV':
                     print(colored(f'Warning, photon (HV) in reaction {x} (\'{reactions[x]}\') is ignored', 'yellow'))
                 else:
-                    print(colored(f'Warning, \'{f}\' in reaction {x} (\'{reactions[x]}\') is not in species, the reaction is ignored', 'yellow'))
+                    print(colored(f'Warning, \'{b}\' in reaction {x} (\'{reactions[x]}\') is not in species, it is ignored', 'yellow'))
 
     nu = nu_backward - nu_forward
     for i in range(0, len(reactions)):
@@ -551,10 +574,11 @@ def get_nu(reactions, species, W):
 
 def extract(path):
   # Open file
+    print(f'path={path}')
     try:
         file = open(path, 'r')
         text = file.read()
-        model = path.split('\\')[-1][:-4]
+        model = os.path.basename(path)[:-4]
     except:
         print(colored(f'Error, \'{path}\' not found', 'red'))
     
@@ -569,7 +593,7 @@ def extract(path):
             LindemannIndexes, ReacConst,
             TroeIndexes, Troe,
             SRIIndexes, SRI,
-        PlogIndexes, Plog1, Plog2, Plog3) = get_reactions(lines, species)
+        PlogIndexes, Plog) = get_reactions(lines, species)
     nu_forward, nu_backward, IrreversibleIndexes = get_nu(reactions, species, W)
     
   # Create parameters.py
@@ -582,7 +606,10 @@ def extract(path):
     text += f'model = \'{model}\'\n'
     text += f'import numpy as np\n'
     text += line_start + 'Physical constants' + line_end
-    text += data.physical_constants + '\n\n'
+    data.calculate_missing_constants()
+    for key, constant in data.physical_constants.items():
+        text += f'{key: <14} = {constant["value"]: <25}# {constant["comment"]}\n'
+    text += '\n'
     
     # Species and elements
     text += line_start + 'Species' + line_end
@@ -605,7 +632,7 @@ def extract(path):
         elif i != len(species)-1:
             text += ', '
     text += '\n)\n'
-    text += f'indexOfWater = ' + str(species.index('H2O')) + '\n'
+    text += f'indexOfWater = ' + ( '-1' if not 'H2O' in species else str(species.index('H2O')) ) + '\n'
     text += f'K = {len(W)}   # Number of species\n\n'
     
     # NASA polynomials
@@ -669,10 +696,10 @@ def extract(path):
     text += f'PlogIndexes = np.array({print_array(PlogIndexes, 4)}, dtype=np.int64)\n'
     text += f'PlogCount = {len(PlogIndexes)}\n\n'
     text += f'# PLOG parameters\n'
-    text += f'Plog1 = np.array('+ print_array(Plog1, 10, [f'{x:>2}. {reactions[x]}' for x in PlogIndexes], ['P_1',  'A_1',  'b_1',  'E_1']) + ', dtype=np.float64)\n\n'
-    text += f'Plog2 = np.array('+ print_array(Plog2, 10, [f'{x:>2}. {reactions[x]}' for x in PlogIndexes], ['P_1',  'A_1',  'b_1',  'E_1']) + ', dtype=np.float64)\n\n'
-    text += f'Plog3 = np.array('+ print_array(Plog3, 10, [f'{x:>2}. {reactions[x]}' for x in PlogIndexes], ['P_1',  'A_1',  'b_1',  'E_1']) + ', dtype=np.float64)\n'
-       
+    PlogComments = [f'{x:>2}. {reactions[x]}' for x in PlogIndexes]
+    PlogComments = sum([[x, '', ''] for x in PlogComments], []) # insert 2 empty lines after each comment
+    text += f'Plog = np.array(' + print_array(Plog, 18, PlogComments, ['P_1',  'A_1',  'b_1',  'E_1']) + ', dtype=np.float64)\n\n'
+    
     text = text.replace('\t', '    ')
     file = open('parameters.py', 'w', encoding='utf8')
     file.write(text)

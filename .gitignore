@@ -1,0 +1,15 @@
+# Python garbage
+*__pycache__
+*.ipynb_checkpoints
+
+# Folders (keep here, whatever you don't want to push)
+parameter_studies/*
+temp/*
+
+# Unwanted file formats
+*.csv
+*.out
+
+# Unwanted files
+*fkubicsek*
+*test*
