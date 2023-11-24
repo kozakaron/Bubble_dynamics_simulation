@@ -85,14 +85,22 @@ def squeeze_into_ranges(point, ranges, padding=0.0, verbose=False):
     for key in ranges:
         if len(ranges[key]) < 2:
             continue
-        if point[key] < ranges[key][0]:
+
+        if ranges[key][0] < ranges[key][1]:
+            start = ranges[key][0]
+            end = ranges[key][1]
+        else:
+            start = ranges[key][1]
+            end = ranges[key][0]
+
+        if point[key] < start:
             interval_width = abs(ranges[key][1] - ranges[key][0])
-            point[key] = ranges[key][0] + padding * interval_width
+            point[key] = start + padding * interval_width
             if verbose:
                 print(colored(f'\tWarning, {key} is out of range: {key}={point[key]}; min_value={ranges[key][0]}', 'yellow'))
-        elif point[key] > ranges[key][1]:
+        elif point[key] > end:
             interval_width = abs(ranges[key][1] - ranges[key][0])
-            point[key] = ranges[key][1] - padding * interval_width
+            point[key] = end - padding * interval_width
             if verbose:
                 print(colored(f'\tWarning, {key} is out of range: {key}={point[key]}; max_value={ranges[key][1]}', 'yellow'))
 
