@@ -36,9 +36,9 @@ except:
 enable_heat_transfer = True
 enable_evaporation = False
 enable_reactions = True
-enable_dissipated_energy = False
+enable_dissipated_energy = True
 target_specie = 'NH3' # Specie to calculate energy effiqiency
-excitation_type = 'no_excitation' # function to calculate pressure excitation
+excitation_type = 'sin_impulse' # function to calculate pressure excitation
 
 """________________________________General________________________________"""
 
@@ -796,7 +796,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     V = 4.0 / 3.0 * (100.0 * R) ** 3 * np.pi # [cm^3]
     n = c * V
     if plot_pressure:
-        internal_pressure = 1e-6 * cpar.P_v + np.sum(n, axis=0) * par.R_g * T / V # [MPa]
+        internal_pressure = np.sum(n, axis=0) * par.R_g * T / V # [MPa]
 
 # plot R and T
     linewidth = 2.0 if presentation_mode else 1.0
@@ -826,7 +826,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     {'$μ_L$':<25} {1000*cpar.mu_L: .2f} $[mPa*s]$
     {'$surfactant$':<25} {cpar.surfactant: .2f}  $[-]$
     {'Initial content:':<20}
-    """
+    """ # TODO remove this
     text = f'Initial conditions:\n'
     text += f'    $R_E$ = {1e6*cpar.R_E: .2f} $[\mu m]$\n'
     if cpar.ratio != 1.0:
@@ -868,6 +868,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     texts = []
     max_mol = np.max(n, axis=1) # maximum amounts of species [mol]
     indexes_to_plot = np.argsort(max_mol)[-10:] if len(max_mol) >= 10 else np.argsort(max_mol) # Get the indexes of the 10 largest values
+    # TODO change this (sometimes some labels are missing)
     for i, specie in enumerate(par.species):
         name = specie
         for digit in range(10): # turns 'H2O2' into 'H_2O_2'
@@ -905,7 +906,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
         )
 
     # plot settings
-    plt.ylim([1e-24, 5.0*max_mol[indexes_to_plot[-1]]])
+    ax.set_ylim([1e-24, 5.0*max_mol[indexes_to_plot[-1]]])
     ax.set_yscale('log')
     if num_sol.t[end_index] < 1e-3:
         ax.set_xlabel('$t$ [μs]')
@@ -947,6 +948,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
         else:
             ax.set_xlabel('$t$ [ms]')
         ax.set_ylabel('Internal pressure [MPa]')
+        ax.set_ylim([5e-7*cpar['P_amb'], 2.0*max(internal_pressure)])
         ax.set_yscale('log')
         if not presentation_mode: ax.grid()
 
