@@ -36,9 +36,9 @@ except:
 enable_heat_transfer = True
 enable_evaporation = False
 enable_reactions = True
-enable_dissipated_energy = False
+enable_dissipated_energy = True
 target_specie = 'NH3' # Specie to calculate energy effiqiency
-excitation_type = 'no_excitation' # function to calculate pressure excitation
+excitation_type = 'sin_impulse' # function to calculate pressure excitation
 
 """________________________________General________________________________"""
 
@@ -79,11 +79,11 @@ if target_specie not in par.species:
     print(colored(f'Error, target specie \'{target_specie}\' not found in parameters.py', 'red'))
     
 def example_cpar(normal_dict=False):
-    '''Provides an example of the control parameter dictionary. Use print_cpar() to print it. Parameters:
+    """Provides an example of the control parameter dictionary. Use print_cpar() to print it. Parameters:
     * normal_dict: if True, returns a normal dictionary, else returns a dotdict
     
     Returns:
-    * cpar: control parameter dictionary'''
+    * cpar: control parameter dictionary"""
     
     cpar = dict(
         ID = 0,                            # ID of control parameter (not used during calculation)
@@ -127,6 +127,9 @@ def Viscosity(T): # [K], pressure dependence is neglected
     return 1.856e-14 * np.exp(4209.0/T + 0.04527*T - 3.376e-5*T**2) # [Pa*s]
 
 def InitialCondition(cpar, evaporation=False):
+    if type(cpar) == dict:
+        cpar = dotdict(cpar)
+
     if not 'P_v' in cpar:
         cpar.P_v = VapourPressure(T=cpar.T_inf) # [Pa]
     if not 'mu_L' in cpar:
@@ -180,6 +183,8 @@ def InitialCondition(cpar, evaporation=False):
 
 
 def Work(cpar, evaporation=False):
+    if type(cpar) == dict:
+        cpar = dotdict(cpar)
     if not 'P_v' in cpar:
         cpar.P_v = VapourPressure(T=cpar.T_inf) # [Pa]
     if not 'mu_L' in cpar:
@@ -458,6 +463,9 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
      * error_code: see de.error_codes: dict, de.get_errors()
      * elapsed_time: elapsed time
     """
+    if type(cpar) == dict:
+        cpar = dotdict(cpar)
+        
     error_code = 0
     start = time.time()
     if not 'P_v' in cpar:
@@ -529,11 +537,11 @@ error_codes = { # this is also a dictionary
 }
 
 def get_errors(error_code, printit=False):
-    '''
+    """
     * Input: error_code (int) 
     * Output: list of error codes (str)
     * Also prints colored errors, if printit=True
-    '''
+    """
     # get digits of error_code
     first_digit = f'xx{error_code % 10}'
     second_digit = f'x{(error_code // 10) % 10}x'
@@ -560,6 +568,8 @@ def get_errors(error_code, printit=False):
 
 # This function gets the numerical solution and the control parameters, and returns some datas about the simulation
 def get_data(cpar, num_sol, error_code, elapsed_time):
+    if type(cpar) == dict:
+        cpar = dotdict(cpar)
     # copy cpar:
     data = dotdict(dict(
         ID=cpar.ID,
@@ -691,7 +701,7 @@ def print_cpar(cpar, without_code=False, print_it=True):
     text += print_line('surfactant', float(cpar['surfactant']), 'surfactant (surface tension modfier) [-]')
     text += f'  # Excitation parameters: (excitation_type = {excitation_type})\n'
     for arg, unit in zip(excitation_args, excitation_units):
-        text += print_line(arg, cpar[arg], f'[{unit}]')
+        text += print_line(arg, float(cpar[arg]), f'[{unit}]')
     if not without_code:
         text += f'))\n\n# Calculate pressure/temperature dependent parameters:\n'
         text += f'cpar.mu_L = de.Viscosity(cpar.T_inf)\n'
@@ -716,7 +726,7 @@ def print_data(cpar, data, print_it=True):
     Final molar concentrations: [mol/cm^3]\n        '''
     
     for k, specie in enumerate(par.species):
-        text += f'{specie: <6}: {data.x_final[3+k]: 24};    '
+        text += f'{specie: <6}: {data.x_final[3+k]: 12.6e};    '
         if (k+1) % 4 == 0: text += f'\n        '
     
     text += f'''\nResults:
@@ -747,7 +757,7 @@ def simulate(kwargs):
 
 """________________________________Plotting________________________________"""
 
-def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30, Radau_timeout=300, presentation_mode=False, plot_pressure=False, show_legend=False, show_cpar=True):
+def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LSODA_timeout=30, Radau_timeout=300, presentation_mode=False, plot_pressure=False, show_legend=False, show_cpar=True):
     """
     This funfction solves the differential equation, and plots it.
     Parameters:
@@ -756,10 +766,11 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
            graphs will be plotted in this intervall, if not default
      * n: how long should the plotted time interval be compared to the collapse time (default: 5 [-])
      * base_name: save plots as .png (default: '' alias do not save)
-               use base_name='plot' --> plot_1.png, plot_2.png
-               use base_name='images/plot' to save into images folder
-               using a folder for images is recommend
+               use base_name='plot' --> plot_1.png, plot_2.png   
+               use base_name='images/plot' to save into images folder   
+               using a folder for images is recommend   
                this folder have to be created manually
+     * format: format of the saved images (available: png, pdf, ps, eps, svg)
      * LSODA_timeout, Radau_timeout: timeout (maximum runtime) for different solvers in solve() in seconds
      * presentation_mode: if True, the plot will be in presentation mode (default: False)
      * plot_pressure: if True, the pressure will be plotted (default: False)
@@ -796,7 +807,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     V = 4.0 / 3.0 * (100.0 * R) ** 3 * np.pi # [cm^3]
     n = c * V
     if plot_pressure:
-        internal_pressure = 1e-6 * cpar.P_v + np.sum(n, axis=0) * par.R_g * T / V # [MPa]
+        internal_pressure = np.sum(n, axis=0) * par.R_g * T / V # [MPa]
 
 # plot R and T
     linewidth = 2.0 if presentation_mode else 1.0
@@ -816,7 +827,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     if not presentation_mode: ax1.grid()
     
 # textbox with initial conditions
-    f"""Initial conditions:
+    f'''Initial conditions:
     {'$R_E$':<25} {1e6*cpar.R_E: .2f}  $[\mu m]$
     {'$R_0/R_E$':<25} {cpar.ratio: .2f}  $[-]$
     {'$P_{amb}$':<25} {1e-5*cpar.P_amb: .2f}  $[bar]$
@@ -826,7 +837,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     {'$μ_L$':<25} {1000*cpar.mu_L: .2f} $[mPa*s]$
     {'$surfactant$':<25} {cpar.surfactant: .2f}  $[-]$
     {'Initial content:':<20}
-    """
+    ''' # TODO remove this
     text = f'Initial conditions:\n'
     text += f'    $R_E$ = {1e6*cpar.R_E: .2f} $[\mu m]$\n'
     if cpar.ratio != 1.0:
@@ -843,7 +854,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     text = text[:-1]
 
     if show_cpar and not presentation_mode:
-        ax1.text(
+        ax2.text(
             0.98, 0.95, # coordinates
             text, transform=ax1.transAxes,
             horizontalalignment='right', verticalalignment='top', multialignment='left',
@@ -867,7 +878,10 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     color_index = 0
     texts = []
     max_mol = np.max(n, axis=1) # maximum amounts of species [mol]
-    indexes_to_plot = np.argsort(max_mol)[-10:] if len(max_mol) >= 10 else np.argsort(max_mol) # Get the indexes of the 10 largest values
+    indexes_to_plot = []
+    for i, specie in enumerate(par.species):
+        if n[i, -1] > 1e-24:
+            indexes_to_plot.append(i)
     for i, specie in enumerate(par.species):
         name = specie
         for digit in range(10): # turns 'H2O2' into 'H_2O_2'
@@ -905,7 +919,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
         )
 
     # plot settings
-    plt.ylim([1e-24, 5.0*max_mol[indexes_to_plot[-1]]])
+    ax.set_ylim([1e-24, 5.0*max_mol[indexes_to_plot[-1]]])
     ax.set_yscale('log')
     if num_sol.t[end_index] < 1e-3:
         ax.set_xlabel('$t$ [μs]')
@@ -947,6 +961,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
         else:
             ax.set_xlabel('$t$ [ms]')
         ax.set_ylabel('Internal pressure [MPa]')
+        ax.set_ylim([5e-7*cpar['P_amb'], 2.0*max(internal_pressure)])
         ax.set_yscale('log')
         if not presentation_mode: ax.grid()
 
@@ -954,13 +969,19 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', LSODA_timeout=30
     
 # saving the plots
     if base_name != '':
+        if format not in ['png', 'pdf', 'ps', 'eps', 'svg']:
+            print(colored(f'Invalid image format {format}, png is used instead. ','yellow'))
+            format = 'png'
         try:
-            metadata = {key: str(data[key]) for key in data.keys()}
-            fig1.savefig(base_name + '_1.png', format='png', metadata=metadata)
-            fig2.savefig(base_name + '_2.png', format='png', metadata=metadata)
+            if format == 'png':
+                metadata = {key: str(data[key]) for key in data.keys()}
+            else:
+                metadata = {}
+            fig1.savefig(base_name+'_1.'+format, format=format, metadata=metadata, bbox_inches='tight')
+            fig2.savefig(base_name+'_2.'+format, format=format, metadata=metadata, bbox_inches='tight')
             if plot_pressure:
-                fig3.savefig(base_name + '_3.png', format='png', metadata=metadata)
-                fig4.savefig(base_name + '_4.png', format='png', metadata=metadata)
+                fig3.savefig(base_name+'_3.'+format, format=format, metadata=metadata, bbox_inches='tight')
+                fig4.savefig(base_name+'_4.'+format, format=format, metadata=metadata, bbox_inches='tight')
         except:
             print(print(colored(f'Error in saving {base_name}_1.png','red')))
 
@@ -1079,6 +1100,7 @@ class Make_dir:
     def new_file(self):
         if self.is_opened:
             return None
+        self.number = len([1 for file in os.listdir(self.save_dir) if file[-4:] == '.csv']) + 1
         file = os.path.join(self.save_dir, self.file_base_name + str(self.number) + '.csv')
         self.file = open(file, 'w')
         self.is_opened = True
