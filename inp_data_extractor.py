@@ -438,7 +438,19 @@ def get_reactions(lines, species):
         if isPLOG and len(Plog) % 3 != 0:
             print(colored(f'Warning, only 3 lines of PLOG is supported in reaction \'{reactions[-1]}\'', 'yellow'))
 
-        
+    for i in LindemannIndexes:
+        if i not in PressureDependentIndexes:
+            print(colored(f'Error, Lindemann reaction {i} (\'{reactions[i]}\') is not in PressureDependentIndexes', 'red'))
+    for i in TroeIndexes:
+        if i not in PressureDependentIndexes:
+            print(colored(f'Error, Troe reaction {i} (\'{reactions[i]}\') is not in PressureDependentIndexes', 'red'))
+    for i in SRIIndexes:
+        if i not in PressureDependentIndexes:
+            print(colored(f'Error, SRI reaction {i} (\'{reactions[i]}\') is not in PressureDependentIndexes', 'red'))
+    for i in PressureDependentIndexes:
+        if not (i in LindemannIndexes or i in TroeIndexes or i in SRIIndexes):
+            print(colored(f'Error, reaction {i} (\'{reactions[i]}\') is in PressureDependentIndexes but not in LindemannIndexes or TroeIndexes or SRIIndexes', 'red'))
+
     try:
         if len(Plog) == 0:
             Plog.append([])

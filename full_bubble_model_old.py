@@ -22,11 +22,11 @@ try:
 except:
     print(print(colored('Error, \'parameters.py\' not found','red')))
 try:
-    import excitation
+    import excitation_old as excitation
     importlib.reload(excitation)
 except:
     try:
-        import Bubble_dynamics_simulation.excitation as excitation
+        import Bubble_dynamics_simulation.excitation_old as excitation
         importlib.reload(excitation)
     except:
         print(colored(f'Error, \'excitation.py\' not found', 'red'))    
@@ -208,96 +208,82 @@ def Work(cpar, evaporation=False):
 
 """________________________________Pressures________________________________"""
 
-@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
+@njit(float64[:](float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
 def Pressure(t, R, R_dot, mu_L, surfactant, p, p_dot, P_amb, args):
-    (p_Inf, p_Inf_dot) = Excitation(t, P_amb, args)
+    p_Inf, p_Inf_dot = Excitation(t, P_amb, args)
     p_L = p - (2.0 * surfactant * par.sigma + 4.0 * mu_L * R_dot) / R
     p_L_dot = p_dot + (-2.0 * surfactant * par.sigma * R_dot + 4.0 * mu_L * R_dot ** 2) / (R ** 2)
     delta = (p_L - p_Inf) / par.rho_L
     delta_dot = (p_L_dot - p_Inf_dot) / par.rho_L
-    return delta, delta_dot
+    return np.array([delta, delta_dot], dtype=np.float64)
 
 
 """________________________________NASA polynomials________________________________"""
 
+# Returns the right set of NASA coefficents
+@njit(float64[:](int32, float64))
+def getCoeffs(k, T):
+    a = np.zeros((7), dtype=np.float64)
+    if T <= par.TempRange[k][2]: # T <= T_mid
+        a = par.a_low[k]
+    else:  # T_mid < T
+        a = par.a_high[k]
+    return a
+
+
 # returns molar heat capacities, enthalpies and entropies
-@njit(float64[:, :](float64))
-def Thermodynamic(T):
+@njit(float64[:, :](float64[:], float64))
+def Thermodynamic(c, T):
     ret = np.zeros((4, par.K), dtype=np.float64)   # [C_p, H, S, C_v]
+    exponent = np.array([1, 2, 3, 4, 5])
     for k in range(par.K):
     # get coefficients for T
-        if T <= par.TempRange[k][2]: # T <= T_mid
-            a = par.a_low[k]
-        else:  # T_mid < T
-            a = par.a_high[k]
-    # calculate sums
-        C_p = H = S = 0.0
-        for n in range(par.N): # [0, 1, 2, 3, 4]
-            T_pow = T**n
-            C_p += a[n] * T_pow
-            H += a[n] * T_pow / float64(n+1)
-            if n != 0:
-                S += a[n] * T_pow / float64(n)
-    # calculations outside the sums
+        a = getCoeffs(k, T)
+            
+     # calculate
+        T_vec = T ** (exponent-1)    # [1, T, T^2, T^3, T^4]
         # Molar heat capacities at constant pressure (isobaric) [erg/mol/K]
-        ret[0][k] = par.R_erg * C_p
+        ret[0][k] = par.R_erg * np.sum(a[:par.N] * T_vec)
         # Enthalpies [erg/mol]
-        ret[1][k] = par.R_erg * (T * H + a[par.N])
+        ret[1][k] = par.R_erg * ( T * np.sum(a[:par.N] * T_vec / exponent) + a[par.N])
         # Entropies [erg/mol/K]
-        ret[2][k] = par.R_erg * (a[0] * np.log(T) + S + a[par.N+1])
-        # Molar heat capacities at constant volume (isochoric) [erg/mol/K]
-        ret[3][k] = ret[0][k] - par.R_erg
-
+        ret[2][k] = par.R_erg * (a[0] * np.log(T) + np.sum(a[1:par.N] * T_vec[1:] / (exponent[1:]-1)) + a[par.N+1])
+    # Molar heat capacities at constant volume (isochoric) [erg/mol/K]
+    ret[3] = ret[0] - par.R_erg 
     return ret
 
 
 """________________________________Evaporation________________________________"""
 
-@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64))
-def Evaporation(p, T, X_H2O, alfa_M, T_inf, P_v):
+@njit(float64[:](float64, float64, float64, float64, float64, float64))
+def Evaporation(M, T, X_H2O, alfa_M, T_inf, P_v):
 # condensation and evaporation
+    p = 0.1 * M * par.R_erg * T
     p_H2O = X_H2O * p
     n_eva_dot = 1.0e3 * alfa_M * P_v / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T_inf))
     n_con_dot = 1.0e3 * alfa_M * p_H2O / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T))
     n_net_dot = n_eva_dot - n_con_dot
-# Molar heat capacity of water at constant volume (isochoric) [J/mol/K]
-    # get coefficients for T
-    if T <= par.TempRange[par.indexOfWater][2]: # T <= T_mid
-        a = par.a_low[par.indexOfWater]
-    else:  # T_mid < T
-        a = par.a_high[par.indexOfWater]
-    # calculate sum
-    T_pow = 1.0
-    C_V = 0.0
-    for n in range(1, par.N+1): # [1, 2, 3, 4, 5]
-        C_V += a[n-1] * T_pow
-        T_pow *= T
-    C_V = par.R_erg * (C_V - 1.0)
+# Molar heat capacity of water at constant volume (isochoric) [erg/mol/K]
+    exponent = np.array([1, 2, 3, 4, 5])
+    a = getCoeffs(par.indexOfWater, T)
+    T_vec = T ** (exponent-1)    # [1, T, T^2, T^3, T^4]
+    C_v = par.R_erg * (np.sum(a[:par.N] * T_vec) - 1.0)
     
-    # get coefficients for T
-    if T_inf <= par.TempRange[par.indexOfWater][2]: # T_inf <= T_mid
-        a = par.a_low[par.indexOfWater]
-    else:  # T_mid < T_inf
-        a = par.a_high[par.indexOfWater]
-    # calculate sum
-    T_pow = 1.0
-    C_V_inf = 0.0
-    for n in range(1, par.N+1): # [1, 2, 3, 4, 5]
-        C_V_inf += a[n-1] * T_pow
-        T_pow *= T_inf
-    C_V_inf = par.R_erg * (C_V_inf - 1.0)
-# Evaporation energy [J/mol]
-    e_eva = C_V_inf * T_inf * 1e-7
-    e_con = C_V * T * 1e-7
+    a = getCoeffs(par.indexOfWater, T_inf)
+    T_vec = T_inf ** (exponent-1)    # [1, T, T^2, T^3, T^4]
+    C_v_inf = par.R_erg * (np.sum(a[:par.N] * T_vec) - 1.0)
+# Evaporation energy
+    e_eva = C_v_inf * T_inf * 1e-7   # [J/mol]
+    e_con = C_v * T * 1e-7
     evap_energy = n_eva_dot * e_eva - n_con_dot * e_con    # [W/m^2]
     
-    return n_net_dot, evap_energy
+    return np.array([n_net_dot, evap_energy], dtype=np.float64)
 
 
 """________________________________Reaction rates________________________________"""
 
-@njit(float64[:](float64, float64[:], float64, float64))
-def ForwardRate(T, M_eff, M, p):
+@njit(float64[:](float64, float64[:], float64))
+def ForwardRate(T, M_eff, M):
 # Reaction rate
     k_forward = par.A * T ** par.b * np.exp(-par.E / (par.R_cal * T))
     
@@ -305,17 +291,10 @@ def ForwardRate(T, M_eff, M, p):
     for j, i in enumerate(par.PressureDependentIndexes):    # i is the number of reaction, j is the index of i's place in par.PressureDependentIndexes
         k_inf = k_forward[i]    # par.A[i] * T ** par.b[i] * np.exp(-par.E[i] / (par.R_cal * T))
         k_0 = par.ReacConst[j][0] * T ** par.ReacConst[j][1] * np.exp(-par.ReacConst[j][2] / (par.R_cal * T))
-        if i in par.ThirdBodyIndexes:
-            thirdBodyIndex = 0
-            while par.ThirdBodyIndexes[thirdBodyIndex] != i:
-                thirdBodyIndex += 1
-            M_eff_loc = M_eff[thirdBodyIndex]
-            thirdBodyIndex += 1
-        else:
-            M_eff_loc = M
-        P_r = k_0 / k_inf * M_eff_loc
+        P_r = k_0 / k_inf * M_eff[i]
+        logP_r = np.log10(P_r)
         
-        # Lindemann formalism
+         # Lindemann formalism
         if i in par.LindemannIndexes:
             F = 1.0
 
@@ -334,11 +313,15 @@ def ForwardRate(T, M_eff, M, p):
         elif i in par.SRIIndexes: 
             X = 1.0 / (1.0 + np.log10(P_r)**2)
             F = par.SRI[j][3] * (par.SRI[j][0] * np.exp(-par.SRI[j][1] / T) + np.exp(-T / par.SRI[j][2]))**X * T ** par.SRI[j][4]
-    # Pressure dependent reactions END
+        else:
+            print('Error, the pressure-dependent reaction cannot be groupped in any type of pressure-dependent reactions!')
+      # Pressure dependent reactions END
     
         k_forward[i] = k_inf * P_r / (1.0 + P_r) * F
 
-# PLOG reactions
+  # PLOG reactions
+    if par.PlogCount > 0:
+        p = 0.1 * M * par.R_erg * T
     for j, i in enumerate(par.PlogIndexes):
         if p < par.Plog[3*j+1][0]:
             k_1 = par.Plog[3*j][1] * T ** par.Plog[3*j][2] * np.exp(-par.Plog[3*j][3] / (par.R_cal * T))
@@ -350,57 +333,43 @@ def ForwardRate(T, M_eff, M, p):
             k_3 = par.Plog[3*j+2][1] * T ** par.Plog[3*j+2][2] * np.exp(-par.Plog[3*j+2][3] / (par.R_cal * T))
             ln_k = np.log(k_2) + (np.log(p) - np.log(par.Plog[3*j+1][0])) / (np.log(par.Plog[3*j+2][0]) - np.log(par.Plog[3*j+1][0])) * (np.log(k_3) - np.log(k_2))
             k_forward[i] = np.exp(ln_k)
-            
     return k_forward
 
 
 @njit(float64[:](float64[:], float64[:], float64[:], float64, float64))
 def BackwardRate(k_forward, S, H, T, P_amb):
-    k_backward = np.zeros((par.I), dtype=np.float64)
-    for i in range(par.I):
-        DeltaS = 0.0
-        DeltaH = 0.0
-        for k in range(par.K):
-            DeltaS += par.nu[i][k] * S[k]
-            DeltaH += par.nu[i][k] * H[k]
-        K_p = np.exp(DeltaS / par.R_erg - DeltaH / (par.R_erg * T))
-        K_c = K_p * (P_amb * 10.0 / (par.R_erg * T)) ** np.sum(par.nu[i])
-        k_backward[i] = k_forward[i] / K_c
+    DeltaS = np.sum(par.nu * S, axis=1)
+    DeltaH = np.sum(par.nu * H, axis=1)
+    K_p = np.exp(DeltaS / par.R_erg - DeltaH / (par.R_erg * T))
+    K_c = K_p * (P_amb * 10.0 / (par.R_erg * T)) ** np.sum(par.nu, axis=1)
+    k_backward = k_forward / K_c
     for i in par.IrreversibleIndexes:
         k_backward[i] = 0.0
-        
     return k_backward
 
 
-@njit(float64[:](float64, float64[:], float64[:], float64[:], float64, float64, float64))
-def ProductionRate(T, H, S, c, P_amb, p, M):
+@njit(float64[:](float64, float64[:], float64[:], float64[:], float64, float64))
+def ProductionRate(T, H, S, c, P_amb, M):
 # Third body correction factors
-    M_eff = np.zeros((par.ThirdBodyCount), dtype = np.float64)   # effective total concentration of the third-body 
+    M_eff = np.sum(c) * np.ones((par.I), dtype = np.float64)    # effective total concentration of the third-body 
     for j, i in enumerate(par.ThirdBodyIndexes):
-        for k in range(par.K):
-            M_eff[j] += par.alfa[j][k] * c[k]
+        M_eff[i] = np.sum(par.alfa[j] * c) 
 # Forward and backward rates
-    k_forward = ForwardRate(T=T, M_eff=M_eff, M=M, p=p)
+    k_forward = ForwardRate(T=T, M_eff=M_eff, M=M)
     k_backward = BackwardRate(k_forward=k_forward, S=S, H=H, T=T, P_amb=P_amb)
 
 # Net rates
     q = np.zeros((par.I), dtype = np.float64)
     for i in range(par.I):
-        forward = 1.0
-        backward = 1.0
-        for k in range(par.K):
-            forward *= c[k] ** par.nu_forward[i][k]
-            backward *= c[k] ** par.nu_backward[i][k]
-        q[i] = k_forward[i] * forward - k_backward[i] * backward
+        q[i] = k_forward[i] * np.prod(c ** par.nu_forward[i]) - k_backward[i] * np.prod(c ** par.nu_backward[i])
 # Third body reactions
     for j, i in enumerate(par.ThirdBodyIndexes):    # i is the number of reaction, j is the index of i in par.ThirdBodyIndexes
         if i not in par.PressureDependentIndexes:
-            q[i] *= M_eff[j]
+            q[i] *= M_eff[i]
 # Production rates
     omega_dot = np.zeros((par.K), dtype=np.float64)
     for k in range(par.K):
-        for i in range(par.I):
-            omega_dot[k] += par.nu[i, k] * q[i]
+        omega_dot[k] = np.sum(par.nu[:, k] * q)
     
     return omega_dot
 
@@ -415,54 +384,47 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, c_L, ex_args):
     c = x[3:-1]     # molar concentration [mol/cm^3]
     M = np.sum(c) # sum of concentration
     X = c / M     # mole fraction [-]
-    p = 0.1 * M * par.R_erg * T # Partial pressure of the gases [Pa]
     dxdt = np.zeros(x.shape, dtype = np.float64)
     
 # d/dt R
     dxdt[0] = R_dot
-# Thermodynamics
-    (C_p, H, S, C_v) = Thermodynamic(T=T)
-    W_avg = C_p_avg = C_v_avg = lambda_avg = 0.0
-    for k in range(par.K):
-        W_avg += X[k] * par.W[k]
-        C_p_avg += X[k] * C_p[k]
-        C_v_avg += X[k] * C_v[k]
-        lambda_avg += X[k] * par.lambdas[k]
-
-    if enable_heat_transfer:
-        rho_avg = W_avg * M # or np.sum(c * par.W)
-        chi_avg = 10.0 * lambda_avg * W_avg / (C_p_avg * rho_avg)
-        l_th = np.inf
-        if R_dot != 0.0:
-            l_th = np.sqrt(R * chi_avg / abs(R_dot))
-        l_th = min(l_th, R / np.pi)
-        Q_th_dot = lambda_avg * (T_inf - T) / l_th
-    else:
-        Q_th_dot = 0.0
-# d/dt c
-    if enable_reactions:
-        omega_dot = ProductionRate(T=T, H=H, S=S, c=c, P_amb=P_amb, p=p, M=M)
-    else:
-        omega_dot = np.zeros((par.K), dtype = np.float64)
-    c_dot = omega_dot - c * 3.0 * R_dot / R
 # Evaporation
+    n_net_dot = 0.0  
+    evap_energy = 0.0
     if enable_evaporation:
-        n_net_dot, evap_energy = Evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], alfa_M=alfa_M, T_inf=T_inf, P_v=P_v)
-        c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
-    else:
-        n_net_dot = evap_energy = 0.0
+        n_net_dot, evap_energy = Evaporation(M=M, T=T, X_H2O=X[par.indexOfWater], alfa_M=alfa_M, T_inf=T_inf, P_v=P_v)
+# Thermodynamics
+    [C_p, H, S, C_v] = Thermodynamic(c=c, T=T)
+    W_avg = np.sum(X * par.W)
+    rho_avg = W_avg * M # or np.sum(c * par.W)
+    C_p_avg = np.sum(X * C_p)
+    C_v_avg = np.sum(X * C_v)
+
+    lambda_avg = np.sum(X * par.lambdas)
+    chi_avg = 10.0 * lambda_avg * W_avg / (C_p_avg * rho_avg)
+    l_th = np.inf
+    if R_dot != 0.0:
+        l_th = np.sqrt(R * chi_avg / abs(R_dot))
+    l_th = min(l_th, R / np.pi)
+    Q_th_dot = 0.0
+    if enable_heat_transfer:
+        Q_th_dot = lambda_avg * (T_inf - T) / l_th
+# d/dt c
+    omega_dot = np.zeros((par.K), dtype = np.float64)
+    if enable_reactions:
+        omega_dot = ProductionRate(T=T, H=H, S=S, c=c, P_amb=P_amb, M=M)
+    c_dot = omega_dot - c * 3.0 * R_dot / R
+    c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
     dxdt[3:-1] = c_dot
 # d/dt T
     sum_omega_dot = np.sum(omega_dot)
-    Q_r_dot = 0.0
-    for k in range(par.K):
-        Q_r_dot -= omega_dot[k] * H[k]
-    Q_r_dot += sum_omega_dot * par.R_erg * T
+    Q_r_dot = -np.sum(H * omega_dot) + sum_omega_dot * par.R_erg * T
+    p = 0.1 * M * par.R_erg * T # Partial pressure of the gases [Pa]
     T_dot = (Q_r_dot + 30.0 / R * (-p * R_dot + Q_th_dot + evap_energy)) / (M * C_v_avg)
     p_dot = p * (sum_omega_dot / M + T_dot / T - 3.0 * R_dot / R) # for later use
     dxdt[2] = T_dot
 # d/dt R_dot
-    (delta, delta_dot) = Pressure(t=t,
+    [delta, delta_dot] = Pressure(t=t,
         R=R, R_dot=R_dot, mu_L=mu_L, surfactant=surfactant,
         p=p, p_dot=p_dot, P_amb=P_amb, args=ex_args
     )   # delta = (p_L-P_amb) / rho_L

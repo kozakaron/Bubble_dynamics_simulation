@@ -6,7 +6,7 @@ Specify which one to use under "Settings" in full_bubble_model.py
 import numpy as np
 from termcolor import colored
 from numba import njit   # Just In Time compiler
-from numba.types import Tuple, float64   # JIT types
+from numba.types import float64   # JIT types
 
 def getExcitation(excitation_type='no_excitation'):
     """
@@ -22,28 +22,28 @@ def getExcitation(excitation_type='no_excitation'):
     """
 
     if excitation_type == 'no_excitation':
-        @njit(Tuple((float64, float64))(float64, float64, float64[:]))
+        @njit(float64[:](float64, float64, float64[:]))
         def Excitation(t, P_amb, args):
-            return P_amb, 0.0
+            return np.array([P_amb, 0.0], dtype=float64)
         
         args = []
         units = []
         return Excitation, args, units
     
     elif excitation_type == 'two_sinusoids':
-        @njit(Tuple((float64, float64))(float64, float64, float64[:]))
+        @njit(float64[:](float64, float64, float64[:]))
         def Excitation(t, P_amb, args):
             p_A1, p_A2, freq1, freq2, theta_phase = args
             p_Inf = P_amb + p_A1*np.sin(2.0*np.pi*freq1*t) + p_A2*np.sin(2.0*np.pi*freq2*t + theta_phase) 
             p_Inf_dot = p_A1*2.0*np.pi*freq1*np.cos(2.0*np.pi*freq1*t) + p_A2*2.0*np.pi*freq2*np.cos(2.0*np.pi*freq2*t+theta_phase)
-            return p_Inf, p_Inf_dot
+            return np.array([p_Inf, p_Inf_dot], dtype=float64)
         
         args = ['p_A1', 'p_A2', 'freq1', 'freq2', 'theta_phase']
         units = ['Pa', 'Pa', 'Hz', 'Hz', 'rad']
         return Excitation, args, units
     
     elif excitation_type == 'sin_sqr':
-        @njit(Tuple((float64, float64))(float64, float64, float64[:]))
+        @njit(float64[:](float64, float64, float64[:]))
         def Excitation(t, P_amb, args):
             p_A, freq, n = args
             if t < n / freq:
@@ -52,14 +52,14 @@ def getExcitation(excitation_type='no_excitation'):
             else:
                 p_Inf = P_amb
                 p_Inf_dot = 0.0
-            return p_Inf, p_Inf_dot
+            return np.array([p_Inf, p_Inf_dot], dtype=np.float64)
         
         args = ['p_A', 'freq', 'n']
         units = ['Pa', 'Hz', '-']
         return Excitation, args, units
     
     elif excitation_type == 'slow_expansion':
-        @njit(Tuple((float64, float64))(float64, float64, float64[:]))
+        @njit(float64[:](float64, float64, float64[:]))
         def Excitation(t, P_amb, args):
             decay_time, increase_time, min_pressure = args
             if t < 0.0:
@@ -75,14 +75,14 @@ def getExcitation(excitation_type='no_excitation'):
                 p_Inf = min_pressure + (P_amb-min_pressure) / (increase_time) * (t-decay_time)
                 p_Inf_dot = (P_amb-min_pressure) / (increase_time)
 
-            return p_Inf, p_Inf_dot
+            return np.array([p_Inf, p_Inf_dot], dtype=np.float64)
         
         args = ['decay_time', 'increase_time', 'min_pressure']
         units = ['s', 's', 'Hz']
         return Excitation, args, units
     
     elif excitation_type == 'sin_impulse_flat_ends':
-        @njit(Tuple((float64, float64))(float64, float64, float64[:]))
+        @njit(float64[:](float64, float64, float64[:]))
         def Excitation(t, P_amb, args):
             p_A, freq, n = args
             if t < 0.0:
@@ -102,14 +102,14 @@ def getExcitation(excitation_type='no_excitation'):
                 p_Inf = P_amb + p_A*np.sin(2.0*np.pi*freq*t)
                 p_Inf_dot = p_A*2.0*np.pi*freq*np.cos(2.0*np.pi*freq*t)
 
-            return p_Inf, p_Inf_dot
+            return np.array([p_Inf, p_Inf_dot], dtype=np.float64)
         
         args = ['p_A', 'freq', 'n']
         units = ['Pa', 'Hz', '-']
         return Excitation, args, units
     
     elif excitation_type == 'sin_impulse':
-        @njit(Tuple((float64, float64))(float64, float64, float64[:]))
+        @njit(float64[:](float64, float64, float64[:]))
         def Excitation(t, P_amb, args):
             p_A, freq, n = args
             if t < 0.0:
@@ -123,14 +123,14 @@ def getExcitation(excitation_type='no_excitation'):
                 p_Inf = P_amb + p_A*np.sin(insin*t)
                 p_Inf_dot = p_A*insin*np.cos(insin*t)
 
-            return p_Inf, p_Inf_dot
+            return np.array([p_Inf, p_Inf_dot], dtype=np.float64)
         
         args = ['p_A', 'freq', 'n']
         units = ['Pa', 'Hz', '-']
         return Excitation, args, units
 
     elif excitation_type == 'sin_impulse_logf':
-        @njit(Tuple((float64, float64))(float64, float64, float64[:]))
+        @njit(float64[:](float64, float64, float64[:]))
         def Excitation(t, P_amb, args):
             p_A, logf, n = args
             freq = 10**logf
@@ -145,7 +145,7 @@ def getExcitation(excitation_type='no_excitation'):
                 p_Inf = P_amb + p_A*np.sin(insin*t)
                 p_Inf_dot = p_A*insin*np.cos(insin*t)
 
-            return p_Inf, p_Inf_dot
+            return np.array([p_Inf, p_Inf_dot], dtype=np.float64)
         
         args = ['p_A', 'logf', 'n']
         units = ['Pa', '-', '-']
