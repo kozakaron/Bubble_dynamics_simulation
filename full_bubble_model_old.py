@@ -34,11 +34,11 @@ except:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = False
+enable_evaporation = True
 enable_reactions = True
 enable_dissipated_energy = True
-target_specie = 'NH3' # Specie to calculate energy effiqiency
-excitation_type = 'no_excitation' # function to calculate pressure excitation
+target_specie = 'H2' # Specie to calculate energy effiqiency
+excitation_type = 'sin_impulse' # function to calculate pressure excitation
 
 """________________________________General________________________________"""
 

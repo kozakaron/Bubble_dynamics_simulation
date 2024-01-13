@@ -34,11 +34,11 @@ except:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = False
+enable_evaporation = True
 enable_reactions = True
 enable_dissipated_energy = True
-target_specie = 'NH3' # Specie to calculate energy effiqiency
-excitation_type = 'no_excitation' # function to calculate pressure excitation
+target_specie = 'H2' # Specie to calculate energy effiqiency
+excitation_type = 'sin_impulse' # function to calculate pressure excitation
 
 """________________________________General________________________________"""
 
@@ -267,24 +267,20 @@ def Evaporation(p, T, X_H2O, alfa_M, T_inf, P_v):
     else:  # T_mid < T
         a = par.a_high[par.indexOfWater]
     # calculate sum
-    T_pow = 1.0
     C_V = 0.0
-    for n in range(1, par.N+1): # [1, 2, 3, 4, 5]
-        C_V += a[n-1] * T_pow
-        T_pow *= T
+    for n in range(par.N): # [0, 1, 2, 3, 4]
+        C_V += a[n] * T**n
     C_V = par.R_erg * (C_V - 1.0)
-    
+
     # get coefficients for T
     if T_inf <= par.TempRange[par.indexOfWater][2]: # T_inf <= T_mid
         a = par.a_low[par.indexOfWater]
     else:  # T_mid < T_inf
         a = par.a_high[par.indexOfWater]
     # calculate sum
-    T_pow = 1.0
     C_V_inf = 0.0
-    for n in range(1, par.N+1): # [1, 2, 3, 4, 5]
-        C_V_inf += a[n-1] * T_pow
-        T_pow *= T_inf
+    for n in range(par.N): # [0, 1, 2, 3, 4]
+        C_V_inf += a[n] * T_inf**n
     C_V_inf = par.R_erg * (C_V_inf - 1.0)
 # Evaporation energy [J/mol]
     e_eva = C_V_inf * T_inf * 1e-7
