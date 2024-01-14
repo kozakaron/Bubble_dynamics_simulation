@@ -20,7 +20,7 @@ if already_imported: importlib.reload(de)   # reload changes you made
 
 """________________________________Helper functions________________________________"""
 
-def rand_point(ranges, ID=0, padding=0.1):
+def rand_point(ranges, ID=0, padding=0.001):
     '''Generates a random cpar dict within ranges. Arguments:
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
      * ID: int, ID for the point
@@ -289,7 +289,7 @@ def search(kwargs):
     '''Call gradient_descent() with a dictionary containing the arguments.'''
     return gradient_descent(**kwargs)
 
-def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max_step_until_decay=10, first_step=0.2, decay=0.5, min_step=1e-4, delta=1e-6, verbose=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
+def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, first_step=0.05, min_step=1e-4, delta=1e-6, verbose=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
     '''Gradient search. Starts at start_point, always go in the direction of the local gradient. Step size decays, if the output at the next step would
     bigger then at the current step, or if too many steps were taken without decay (to avoid back &forth stepping). Search ends, if the step_size
     decays to be smaller than min_step*interval_width, or if gradient fails repeatedly.     Arguments:
@@ -298,9 +298,7 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
      * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
      * start_point: dict, cpar where the search starts
      * step_limit: int, maximum number of steps
-     * max_step_until_decay: int, maximum number of steps without decay
      * first_step: float, first step size
-     * decay: float, decay rate
      * min_step: float, minimum step size
      * delta: float, step size for the finite difference
      * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
@@ -325,23 +323,23 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
     start = time.time()
     step_size = first_step
     step_num = 0
-    steps_since_last_decay = 0
     fail_num = 0
     start_point = de.dotdict(start_point)
+    change = dict()
     
     absolute_best = 1e30
     last_best = 1e30
     last_bests = []
 
     # learning
-    while step_num < step_limit and min_step < step_size and fail_num < 5:
+    while step_num < step_limit and min_step < step_size and fail_num < 3:
         # calculate gradient (try forward difference, if it fails, try central difference, if that fails too, repeat last step)
         gradient, current_datas = forward_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, verbose=verbose)
         if gradient is None:
             gradient, current_datas = central_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, verbose=verbose)
         if gradient is None:
             print(colored(f'\tError, gradient can not be calculated in point {start_point}', 'red'))
-            if step_num == 0:
+            if len(change) == 0:
                 return None, [1.0e30], time.time()-start
             else:
                 for key in keys:
@@ -355,52 +353,51 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
         last_best = min([data['output'] for data in current_datas])
         last_bests.append(last_best)
         absolute_best = min(absolute_best, last_best)
-        if verbose:
+        if verbose: 
             print(colored(f'{step_num}. step; {last_best=: .5e}; {absolute_best=: .5e}; {step_size=: .5f}', 'green'))
             point_str = ''.join([f'{key}={start_point[key]: e}; ' for key in keys if isinstance(start_point[key], float)])
             print(f'\tpoint   =({point_str})')
 
-        # calculate change (step's direction)
-        change = dict()
-        for key in keys:
-            interval_width = abs(ranges[key][1] - ranges[key][0])
-            change[key] = -step_size * gradient[key] * interval_width
-
-
-        # decay
-        # calculate where the next point would be
-        trial_point = de.copy(start_point)
-        for key in keys:
-            trial_point[key] += change[key]
-        trial_point = squeeze_into_ranges(trial_point, ranges, padding=10.0*delta)
-        trial_point_data, success = evaluate(trial_point, to_optimize, **solver_kwargs)
-        next_output = trial_point_data['output']
-        current_datas.append(trial_point_data)
-        if success:
-            # decay if last decay was too long ago, can't be first decay this way: avoid back and forth steps
-            forced_decay = False
-            if step_size != first_step and steps_since_last_decay > max_step_until_decay:
-                forced_decay = True
-                if verbose: print(colored(f'\tforced decay: {forced_decay}', 'magenta'))
+        # make 5 steps in the direction of the gradient
+        trial_outputs = []
+        modifiers = [0.25, 0.5, 1.0, 2.0, 4.0]
+        for modifier in modifiers:
+            trial_point = de.copy(start_point)
+            for key in keys:
+                trial_point[key] -= modifier * step_size * gradient[key] * abs(ranges[key][1] - ranges[key][0])
+            trial_point = squeeze_into_ranges(trial_point, ranges, padding=10.0*delta)
+            trial_data, success = evaluate(trial_point, to_optimize, **solver_kwargs)
+            current_datas.append(trial_data)
+            if success:
+                trial_outputs.append(trial_data['output'])
             else:
-                forced_decay = False
-            # decay if next step is worse than the last best
-            if next_output > last_best or forced_decay:
-                steps_since_last_decay = 0
-                step_size *= decay
-                for key in keys:
-                    change[key] *= decay
-                if verbose: print(colored(f'\tdecayed: {step_size=: .4f}; next_output={next_output}', 'magenta'))
+                trial_outputs.append(1.0e30)
+
+        # choose the best trial point and modify step_size accordingly
+        if any([output < 1.0e30 for output in trial_outputs]):  # if there is any successfully evaluated trial point
+            best_modifier = modifiers[trial_outputs.index(min(trial_outputs))]
+            step_size *= best_modifier
+            for key in keys:
+                change[key] = -step_size * gradient[key] * abs(ranges[key][1] - ranges[key][0])
         else:
-            if verbose: print(colored(f'\tError, simulation failed in next point', 'red'))
+            if verbose: print(colored(f'\tError, simulation failed in all trial points, {fail_num=}. ', 'red'))
+            if len(change) == 0:
+                return None, [1.0e30], time.time()-start
+            else:
+                for key in keys:
+                    start_point[key] += change[key]
+                start_point = squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
+                step_num += 1
+                fail_num += 1
+                continue
 
         # make the step
         for key in keys:
             start_point[key] += change[key]
         start_point = squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
-        next_point_data, success = evaluate(start_point, to_optimize, **solver_kwargs)
         if verbose:
-            print(f'\toutput  ={next_point_data["output"]}; success={success}')
+            next_point_data, success = evaluate(start_point, to_optimize, **solver_kwargs)
+            print(f'\toutput  ={next_point_data["output"]}; success={success}; modifier={best_modifier}; ')
         
         # print stuff
         if file is not None:
@@ -412,7 +409,6 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
         del current_datas
 
         step_num += 1
-        steps_since_last_decay += 1
         fail_num = 0
         if verbose:
             gradient_str = ''.join([f'{key}={gradient[key]: 6.4f}; ' for key in keys])

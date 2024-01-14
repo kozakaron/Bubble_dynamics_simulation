@@ -34,10 +34,10 @@ except:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = True
+enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = True
-target_specie = 'H2' # Specie to calculate energy effiqiency
+target_specie = 'NH3' # Specie to calculate energy effiqiency
 excitation_type = 'sin_impulse' # function to calculate pressure excitation
 
 """________________________________General________________________________"""
@@ -99,6 +99,7 @@ def example_cpar(normal_dict=False):
         alfa_M = par.alfa_M,               # water accommodation coefficient [-]
         P_v = par.P_v,                     # vapour pressure [Pa]
         mu_L = par.mu_L,                   # dynamic viscosity [Pa*s]
+        rho_L = par.rho_L,                 # density [kg/m^3]
         c_L = par.c_L,                     # sound speed [m/s]
         surfactant = 1.00,                 # surfactant (surface tension modfier) [-]
     )
@@ -134,6 +135,8 @@ def InitialCondition(cpar, evaporation=False):
         cpar.P_v = VapourPressure(T=cpar.T_inf) # [Pa]
     if not 'mu_L' in cpar:
         cpar.mu_L = Viscosity(T=cpar.T_inf) # [Pa]
+    if not 'rho_L' in cpar:
+        cpar.rho_L = par.rho_L # [kg/m^3]
     if not 'c_L' in cpar:
         cpar.c_L = par.c_L # [m/s]
     if type(cpar.gases) != list:
@@ -189,6 +192,10 @@ def Work(cpar, evaporation=False):
         cpar.P_v = VapourPressure(T=cpar.T_inf) # [Pa]
     if not 'mu_L' in cpar:
         cpar.mu_L = Viscosity(T=cpar.T_inf) # [Pa]
+    if not 'rho_L' in cpar:
+        cpar.rho_L = par.rho_L # [kg/m^3]
+    if not 'c_L' in cpar:
+        cpar.c_L = par.c_L # [m/s]
     R_0 = cpar.ratio * cpar.R_E # [m]
     V_E = 4.0 / 3.0 * cpar.R_E**3 * np.pi    # [m^3]
     V_0 = 4.0 / 3.0 * R_0**3 * np.pi  # [m^3]
@@ -208,13 +215,13 @@ def Work(cpar, evaporation=False):
 
 """________________________________Pressures________________________________"""
 
-@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
-def Pressure(t, R, R_dot, mu_L, surfactant, p, p_dot, P_amb, args):
+@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
+def Pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, args):
     (p_Inf, p_Inf_dot) = Excitation(t, P_amb, args)
     p_L = p - (2.0 * surfactant * par.sigma + 4.0 * mu_L * R_dot) / R
     p_L_dot = p_dot + (-2.0 * surfactant * par.sigma * R_dot + 4.0 * mu_L * R_dot ** 2) / (R ** 2)
-    delta = (p_L - p_Inf) / par.rho_L
-    delta_dot = (p_L_dot - p_Inf_dot) / par.rho_L
+    delta = (p_L - p_Inf) / rho_L
+    delta_dot = (p_L_dot - p_Inf_dot) / rho_L
     return delta, delta_dot
 
 
@@ -403,8 +410,8 @@ def ProductionRate(T, H, S, c, P_amb, p, M):
 
 """________________________________Differential equation________________________________"""
 
-@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64[:]))
-def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, c_L, ex_args):   
+@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
+def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args):   
     R = x[0]      # bubble radius [m]
     R_dot = x[1]  # [m/s]
     T = x[2]      # temperature [K]
@@ -459,12 +466,12 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, c_L, ex_args):
     dxdt[2] = T_dot
 # d/dt R_dot
     (delta, delta_dot) = Pressure(t=t,
-        R=R, R_dot=R_dot, mu_L=mu_L, surfactant=surfactant,
+        R=R, R_dot=R_dot, mu_L=mu_L, surfactant=surfactant, rho_L=rho_L,
         p=p, p_dot=p_dot, P_amb=P_amb, args=ex_args
     )   # delta = (p_L-P_amb) / rho_L
     
     Nom = (1.0 + R_dot / c_L) * delta + R / c_L * delta_dot - (1.5 - 0.5 * R_dot / c_L) * R_dot ** 2
-    Den = (1.0 - R_dot / c_L) * R + 4.0 * mu_L / (c_L * par.rho_L)
+    Den = (1.0 - R_dot / c_L) * R + 4.0 * mu_L / (c_L * rho_L)
     
     dxdt[1] = Nom / Den
     
@@ -472,7 +479,7 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, c_L, ex_args):
         V_dot=4.0 * R * R * R_dot * np.pi
         integrand_th = -(p * (1 + R_dot / c_L) + R / c_L * p_dot) * V_dot
         integrand_v = 16.0 * np.pi * mu_L * (R * R_dot*R_dot + R * R * R_dot * dxdt[1] / c_L)
-        integrand_r = 4.0 * np.pi / c_L * R * R * R_dot * (R_dot * p + p_dot * R - 0.5 * par.rho_L * R_dot * R_dot * R_dot - par.rho_L * R * R_dot * dxdt[1])
+        integrand_r = 4.0 * np.pi / c_L * R * R * R_dot * (R_dot * p + p_dot * R - 0.5 * rho_L * R_dot * R_dot * R_dot - rho_L * R * R_dot * dxdt[1])
 
         dxdt[-1]=(integrand_th + integrand_v + integrand_r)
     else:
@@ -506,6 +513,10 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
         cpar.P_v = VapourPressure(T=cpar.T_inf) # [Pa]
     if not 'mu_L' in cpar:
         cpar.mu_L = Viscosity(T=cpar.T_inf) # [Pa]
+    if not 'rho_L' in cpar:
+        cpar.rho_L = par.rho_L # [kg/m^3]
+    if not 'c_L' in cpar:
+        cpar.c_L = par.c_L # [m/s]
     ex_args = []
     for name, unit in zip(excitation_args, excitation_units):
         if name in cpar:
@@ -526,7 +537,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
         num_sol = func_timeout( # timeout block
             LSODA_timeout, solve_ivp,
             kwargs=dict(fun=f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
-                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.c_L, ex_args) # f's arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args) # f's arguments
             )
         )
         if num_sol.success == False:
@@ -540,7 +551,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
             num_sol = func_timeout( # timeout block
                 Radau_timeout, solve_ivp, 
                 kwargs=dict(fun=f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
-                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.c_L, ex_args)) # f's arguments
+                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args)) # f's arguments
             )
             if num_sol.success == False:
                 error_code += 40
@@ -614,10 +625,11 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
         T_inf=cpar.T_inf,
         P_v=cpar.P_v,
         mu_L=cpar.mu_L,
+        rho_L=cpar.rho_L,
+        c_L=cpar.c_L,
         surfactant=cpar.surfactant,
         gases=cpar.gases,
         fractions=cpar.fractions,
-        c_L=cpar.c_L,
     ))
     for name, unit in zip(excitation_args, excitation_units):
         if name in cpar:
@@ -676,7 +688,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     return data
 
 # keys of data: (except x_final)
-keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'gases', 'fractions', 'surfactant', 'c_L',
+keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'rho_L', 'gases', 'fractions', 'surfactant', 'c_L',
         'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency',
         'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
 
@@ -731,6 +743,7 @@ def print_cpar(cpar, without_code=False, print_it=True):
     text += print_line('alfa_M', float(cpar['alfa_M']), 'water accommodation coefficient [-]')
     text += print_line('P_v', float(cpar['P_v']), 'vapour pressure [Pa]')
     text += print_line('mu_L', float(cpar['mu_L']), 'dynamic viscosity [Pa*s]')
+    text += print_line('rho_L', float(cpar['rho_L']), 'density [kg/m^3]')
     text += print_line('c_L', float(cpar['c_L']), 'sound speed [m/s]')
     text += print_line('surfactant', float(cpar['surfactant']), 'surfactant (surface tension modfier) [-]')
     text += f'  # Excitation parameters: (excitation_type = {excitation_type})\n'
@@ -869,6 +882,8 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
     {'$T_inf$':<25} {cpar.T_inf-273.15: .2f}  $[°C]$
     {'$P_{vapour}$':<25} {cpar.P_v: .1f}  $[Pa]$
     {'$μ_L$':<25} {1000*cpar.mu_L: .2f} $[mPa*s]$
+    {'$ρ_L$':<25} {cpar.rho_L: .2f}  $[kg/m^3]$
+    {'$c_L$':<25} {cpar.c_L: .2f}  $[m/s]$
     {'$surfactant$':<25} {cpar.surfactant: .2f}  $[-]$
     {'Initial content:':<20}
     ''' # TODO remove this
