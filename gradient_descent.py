@@ -289,7 +289,7 @@ def search(kwargs):
     '''Call gradient_descent() with a dictionary containing the arguments.'''
     return gradient_descent(**kwargs)
 
-def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, first_step=0.05, min_step=1e-4, delta=1e-6, verbose=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
+def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, first_step=0.01, min_step=1e-4, delta=1e-6, verbose=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
     '''Gradient search. Starts at start_point, always go in the direction of the local gradient. Step size decays, if the output at the next step would
     bigger then at the current step, or if too many steps were taken without decay (to avoid back &forth stepping). Search ends, if the step_size
     decays to be smaller than min_step*interval_width, or if gradient fails repeatedly.     Arguments:
@@ -377,8 +377,6 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, fir
         if any([output < 1.0e30 for output in trial_outputs]):  # if there is any successfully evaluated trial point
             best_modifier = modifiers[trial_outputs.index(min(trial_outputs))]
             step_size *= best_modifier
-            for key in keys:
-                change[key] = -step_size * gradient[key] * abs(ranges[key][1] - ranges[key][0])
         else:
             if verbose: print(colored(f'\tError, simulation failed in all trial points, {fail_num=}. ', 'red'))
             if len(change) == 0:
@@ -393,6 +391,7 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, fir
 
         # make the step
         for key in keys:
+            change[key] = -step_size * gradient[key] * abs(ranges[key][1] - ranges[key][0])
             start_point[key] += change[key]
         start_point = squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
         if verbose:
@@ -420,6 +419,6 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, fir
     elapsed_time = end-start
     if file is not None:
         file.close()
-        return dict(next_point_data), last_bests, elapsed_time
+        return dict(trial_data), last_bests, elapsed_time
     else:
         return all_datas, last_bests, elapsed_time
