@@ -34,7 +34,7 @@ except:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = False
+enable_evaporation = True
 enable_reactions = True
 enable_dissipated_energy = True
 target_specie = 'NH3' # Specie to calculate energy effiqiency
@@ -50,7 +50,8 @@ class dotdict(dict):
     __delattr__ = dict.__delitem__
 
 def copy(input):
-    """deep copy of input"""
+    """Deep copies the input. Use: copied = copy(original). 
+    Deep copy means that the input and the output are independent from each other, nothing is copied by reference."""
 
     if type(input) == list:
         return [copy(element) for element in input]
@@ -65,16 +66,17 @@ def copy(input):
 
 """________________________________Before the simulation________________________________"""
 
-def colorTF(boolean):
+def _colorTF(boolean):
+    """Input: boolean. Colors it red if False, green if True. Returns the colored string."""
     return colored(str(boolean), 'green') if boolean else colored(str(boolean), 'red')
 
-Excitation, excitation_args, excitation_units = excitation.getExcitation(excitation_type=excitation_type)
+Excitation, excitation_args, excitation_units, excitation_defaults = excitation.getExcitation(excitation_type=excitation_type)
 if par.indexOfWater == -1:
     enable_evaporation = False
 print(f'model: {par.model}')
 print(f'target specie: {target_specie}')
 print(f'excitation: {excitation_type} (control parameters: {excitation_args})')
-print(f'enable heat transfer: {colorTF(enable_heat_transfer)}\tenable evaporation: {colorTF(enable_evaporation)}\tenable reactions: {colorTF(enable_reactions)}\tenable dissipated energy: {colorTF(enable_dissipated_energy)}')
+print(f'enable heat transfer: {_colorTF(enable_heat_transfer)}\tenable evaporation: {_colorTF(enable_evaporation)}\tenable reactions: {_colorTF(enable_reactions)}\tenable dissipated energy: {_colorTF(enable_dissipated_energy)}')
 if target_specie not in par.species:
     print(colored(f'Error, target specie \'{target_specie}\' not found in parameters.py', 'red'))
     
@@ -104,14 +106,16 @@ def example_cpar(normal_dict=False):
         surfactant = 1.00,                 # surfactant (surface tension modfier) [-]
     )
 
-    for arg in excitation_args:
-        cpar[arg] = 0.0
+    for arg, default in zip(excitation_args, excitation_defaults):
+        cpar[arg] = float(default)
     if target_specie == 'NH3':
         cpar['gases'] = [par.index['H2'], par.index['N2']]
         cpar['fractions'] = [0.75, 0.25]
     else:
         cpar['gases'] = [par.index['O2']]
         cpar['fractions'] = [1.0]
+    if excitation_type == 'no_excitation':
+        cpar['ratio'] = 3.0
 
     if normal_dict:
         return cpar
@@ -119,22 +123,31 @@ def example_cpar(normal_dict=False):
         return dotdict(cpar)
 
 @njit(float64(float64))
-def VapourPressure(T): # [K]
+def vapour_pressure(T): # [K]
+    """Calculates the vapour pressure of water as a function of temperature (T) in Kelvin. """
     T -= 273.15 # [°C]
     return 611.21 * np.exp( (18.678 - T / 234.5) * (T / (257.14 + T)) ) # [Pa]
 
 @njit(float64(float64))
-def Viscosity(T): # [K], pressure dependence is neglected
+def viscosity(T):   # [K]
+    """Calculates the dynamic viscosity of water as a function of temperature (T) in Kelvin. Pressure dependence is neglected. """
     return 1.856e-14 * np.exp(4209.0/T + 0.04527*T - 3.376e-5*T**2) # [Pa*s]
 
-def InitialCondition(cpar, evaporation=False):
+# To retain compatibility with the old code
+def VapourPressure(T): return vapour_pressure(T) # Legacy name
+def Viscosity(T): return viscosity(T) # Legacy name
+
+
+def _initial_condition(cpar, evaporation=False):
+    """Calculates the initial condition of the bubble from the control parameters."""
+
     if type(cpar) == dict:
         cpar = dotdict(cpar)
 
     if not 'P_v' in cpar:
-        cpar.P_v = VapourPressure(T=cpar.T_inf) # [Pa]
+        cpar.P_v = vapour_pressure(T=cpar.T_inf) # [Pa]
     if not 'mu_L' in cpar:
-        cpar.mu_L = Viscosity(T=cpar.T_inf) # [Pa]
+        cpar.mu_L = viscosity(T=cpar.T_inf) # [Pa]
     if not 'rho_L' in cpar:
         cpar.rho_L = par.rho_L # [kg/m^3]
     if not 'c_L' in cpar:
@@ -144,9 +157,9 @@ def InitialCondition(cpar, evaporation=False):
     if type(cpar.fractions) != list:
         cpar.fractions = [cpar.fractions]
     if round(sum(cpar.fractions), 5) != 1.0:
-        print(print(colored(f'Warning, in InitialCondition(), sum of cpar.fractions isn\'t 1: {cpar.fractions}','yellow')))
+        print(print(colored(f'Warning, in _initial_condition(), sum of cpar.fractions isn\'t 1: {cpar.fractions}','yellow')))
     if len(cpar.gases) != len(cpar.fractions):
-        print(print(colored(f'Warning, in InitialCondition(), len(cpar.gases) != len(cpar.fractions): {cpar.gases} != {cpar.fractions}','yellow')))
+        print(print(colored(f'Warning, in _initial_condition(), len(cpar.gases) != len(cpar.fractions): {cpar.gases} != {cpar.fractions}','yellow')))
     IC = np.zeros((par.K+4), dtype=np.float64)
     R_0 = cpar.ratio * cpar.R_E
     
@@ -180,18 +193,20 @@ def InitialCondition(cpar, evaporation=False):
         IC[3 + par.index['H2O']] = c_H2O * 1.0e-6    # [mol/cm^3]
     for index, fraction in zip(cpar.gases, cpar.fractions):
         IC[3 + index] = fraction * c_gas * 1.0e-6    # [mol/cm^3]
-    IC[3 + par.K] = 0.0 # dissipated acoustic energy [J]
+    IC[3 + par.K] = 0.0 # dissipated energy [J]
 
     return IC, lowpressure_error, lowpressure_warning
 
 
-def Work(cpar, evaporation=False):
+def _work(cpar, evaporation=False):
+    """Calculates expansion work of the bubble, if ratio != 1"""
+
     if type(cpar) == dict:
         cpar = dotdict(cpar)
     if not 'P_v' in cpar:
-        cpar.P_v = VapourPressure(T=cpar.T_inf) # [Pa]
+        cpar.P_v = vapour_pressure(T=cpar.T_inf) # [Pa]
     if not 'mu_L' in cpar:
-        cpar.mu_L = Viscosity(T=cpar.T_inf) # [Pa]
+        cpar.mu_L = viscosity(T=cpar.T_inf) # [Pa]
     if not 'rho_L' in cpar:
         cpar.rho_L = par.rho_L # [kg/m^3]
     if not 'c_L' in cpar:
@@ -213,10 +228,10 @@ def Work(cpar, evaporation=False):
     return W_gas + W_surface_tension + W_flow    # [J]
 
 
-"""________________________________Pressures________________________________"""
+"""________________________________pressures________________________________"""
 
 @njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
-def Pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, args):
+def _pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, args):
     (p_Inf, p_Inf_dot) = Excitation(t, P_amb, args)
     p_L = p - (2.0 * surfactant * par.sigma + 4.0 * mu_L * R_dot) / R
     p_L_dot = p_dot + (-2.0 * surfactant * par.sigma * R_dot + 4.0 * mu_L * R_dot ** 2) / (R ** 2)
@@ -229,7 +244,7 @@ def Pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, args):
 
 # returns molar heat capacities, enthalpies and entropies
 @njit(float64[:, :](float64))
-def Thermodynamic(T):
+def _thermodynamic(T):
     ret = np.zeros((4, par.K), dtype=np.float64)   # [C_p, H, S, C_v]
     for k in range(par.K):
     # get coefficients for T
@@ -261,7 +276,7 @@ def Thermodynamic(T):
 """________________________________Evaporation________________________________"""
 
 @njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64))
-def Evaporation(p, T, X_H2O, alfa_M, T_inf, P_v):
+def _evaporation(p, T, X_H2O, alfa_M, T_inf, P_v):
 # condensation and evaporation
     p_H2O = X_H2O * p
     n_eva_dot = 1.0e3 * alfa_M * P_v / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T_inf))
@@ -300,7 +315,7 @@ def Evaporation(p, T, X_H2O, alfa_M, T_inf, P_v):
 """________________________________Reaction rates________________________________"""
 
 @njit(float64[:](float64, float64[:], float64, float64))
-def ForwardRate(T, M_eff, M, p):
+def _forward_rate(T, M_eff, M, p):
 # Reaction rate
     k_forward = par.A * T ** par.b * np.exp(-par.E / (par.R_cal * T))
     
@@ -358,7 +373,7 @@ def ForwardRate(T, M_eff, M, p):
 
 
 @njit(float64[:](float64[:], float64[:], float64[:], float64, float64))
-def BackwardRate(k_forward, S, H, T, P_amb):
+def _backward_rate(k_forward, S, H, T, P_amb):
     k_backward = np.zeros((par.I), dtype=np.float64)
     for i in range(par.I):
         DeltaS = 0.0
@@ -376,15 +391,15 @@ def BackwardRate(k_forward, S, H, T, P_amb):
 
 
 @njit(float64[:](float64, float64[:], float64[:], float64[:], float64, float64, float64))
-def ProductionRate(T, H, S, c, P_amb, p, M):
+def _production_rate(T, H, S, c, P_amb, p, M):
 # Third body correction factors
     M_eff = np.zeros((par.ThirdBodyCount), dtype = np.float64)   # effective total concentration of the third-body 
     for j, i in enumerate(par.ThirdBodyIndexes):
         for k in range(par.K):
             M_eff[j] += par.alfa[j][k] * c[k]
 # Forward and backward rates
-    k_forward = ForwardRate(T=T, M_eff=M_eff, M=M, p=p)
-    k_backward = BackwardRate(k_forward=k_forward, S=S, H=H, T=T, P_amb=P_amb)
+    k_forward = _forward_rate(T=T, M_eff=M_eff, M=M, p=p)
+    k_backward = _backward_rate(k_forward=k_forward, S=S, H=H, T=T, P_amb=P_amb)
 
 # Net rates
     q = np.zeros((par.I), dtype = np.float64)
@@ -411,7 +426,9 @@ def ProductionRate(T, H, S, c, P_amb, p, M):
 """________________________________Differential equation________________________________"""
 
 @njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
-def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args):   
+def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args): 
+    """ODE function for the bubble model. Returns the derivative of the state vector x at time t."""
+
     R = x[0]      # bubble radius [m]
     R_dot = x[1]  # [m/s]
     T = x[2]      # temperature [K]
@@ -424,7 +441,7 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args):
 # d/dt R
     dxdt[0] = R_dot
 # Thermodynamics
-    (C_p, H, S, C_v) = Thermodynamic(T=T)
+    (C_p, H, S, C_v) = _thermodynamic(T=T)
     W_avg = C_p_avg = C_v_avg = lambda_avg = 0.0
     for k in range(par.K):
         W_avg += X[k] * par.W[k]
@@ -444,13 +461,13 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args):
         Q_th_dot = 0.0
 # d/dt c
     if enable_reactions:
-        omega_dot = ProductionRate(T=T, H=H, S=S, c=c, P_amb=P_amb, p=p, M=M)
+        omega_dot = _production_rate(T=T, H=H, S=S, c=c, P_amb=P_amb, p=p, M=M)
     else:
         omega_dot = np.zeros((par.K), dtype = np.float64)
     c_dot = omega_dot - c * 3.0 * R_dot / R
 # Evaporation
     if enable_evaporation:
-        n_net_dot, evap_energy = Evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], alfa_M=alfa_M, T_inf=T_inf, P_v=P_v)
+        n_net_dot, evap_energy = _evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], alfa_M=alfa_M, T_inf=T_inf, P_v=P_v)
         c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
     else:
         n_net_dot = evap_energy = 0.0
@@ -465,7 +482,7 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args):
     p_dot = p * (sum_omega_dot / M + T_dot / T - 3.0 * R_dot / R) # for later use
     dxdt[2] = T_dot
 # d/dt R_dot
-    (delta, delta_dot) = Pressure(t=t,
+    (delta, delta_dot) = _pressure(t=t,
         R=R, R_dot=R_dot, mu_L=mu_L, surfactant=surfactant, rho_L=rho_L,
         p=p, p_dot=p_dot, P_amb=P_amb, args=ex_args
     )   # delta = (p_L-P_amb) / rho_L
@@ -481,9 +498,9 @@ def f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args):
         integrand_v = 16.0 * np.pi * mu_L * (R * R_dot*R_dot + R * R * R_dot * dxdt[1] / c_L)
         integrand_r = 4.0 * np.pi / c_L * R * R * R_dot * (R_dot * p + p_dot * R - 0.5 * rho_L * R_dot * R_dot * R_dot - rho_L * R * R_dot * dxdt[1])
 
-        dxdt[-1]=(integrand_th + integrand_v + integrand_r)
+        dxdt[-1] = (integrand_th + integrand_v + integrand_r)
     else:
-        dxdt[-1]=0.0
+        dxdt[-1] = 0.0
     
     return dxdt
 
@@ -504,15 +521,16 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
      * error_code: see de.error_codes: dict, de.get_errors()
      * elapsed_time: elapsed time
     """
+
     if type(cpar) == dict:
         cpar = dotdict(cpar)
         
     error_code = 0
     start = time.time()
     if not 'P_v' in cpar:
-        cpar.P_v = VapourPressure(T=cpar.T_inf) # [Pa]
+        cpar.P_v = vapour_pressure(T=cpar.T_inf) # [Pa]
     if not 'mu_L' in cpar:
-        cpar.mu_L = Viscosity(T=cpar.T_inf) # [Pa]
+        cpar.mu_L = viscosity(T=cpar.T_inf) # [Pa]
     if not 'rho_L' in cpar:
         cpar.rho_L = par.rho_L # [kg/m^3]
     if not 'c_L' in cpar:
@@ -525,7 +543,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
             ex_args.append(0.0)
             print(colored(f'Warning! Pressure excitation argument \'{name} [{unit}]\' is not in cpar. 0 is used instead. ', 'yellow'))
     ex_args = np.array(ex_args, dtype=np.float64)
-    IC, lowpressure_error, lowpressure_warning = InitialCondition(cpar, enable_evaporation)
+    IC, lowpressure_error, lowpressure_warning = _initial_condition(cpar, enable_evaporation)
     if lowpressure_error:
         error_code += 100
         return None, error_code, 0.0
@@ -536,7 +554,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
     try: # try-catch block
         num_sol = func_timeout( # timeout block
             LSODA_timeout, solve_ivp,
-            kwargs=dict(fun=f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
+            kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
                         args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args) # f's arguments
             )
         )
@@ -550,7 +568,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
         try: # try-catch block
             num_sol = func_timeout( # timeout block
                 Radau_timeout, solve_ivp, 
-                kwargs=dict(fun=f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
+                kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
                             args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args)) # f's arguments
             )
             if num_sol.success == False:
@@ -587,6 +605,7 @@ def get_errors(error_code, printit=False):
     * Output: list of error codes (str)
     * Also prints colored errors, if printit=True
     """
+
     # get digits of error_code
     first_digit = f'xx{error_code % 10}'
     second_digit = f'x{(error_code // 10) % 10}x'
@@ -613,6 +632,16 @@ def get_errors(error_code, printit=False):
 
 # This function gets the numerical solution and the control parameters, and returns some datas about the simulation
 def get_data(cpar, num_sol, error_code, elapsed_time):
+    """This function gets the numerical solution and the control parameters, and returns some datas about the simulation. Arguments:
+     * cpar: control parameters (dict or dotdict)
+     * num_sol: numerical solution from solve()
+     * error_code: error code from solve()
+     * elapsed_time: elapsed time from solve()
+
+    Returns:
+     * data: dotdict with the post processing data (e.g. collapse time, energy efficiency, etc.)
+    """
+
     if type(cpar) == dict:
         cpar = dotdict(cpar)
     # copy cpar:
@@ -680,20 +709,25 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     last_V = 4.0 / 3.0 * (100.0 * data.x_final[0]) ** 3 * np.pi # [cm^3]
     data[f'n_{target_specie}'] = data.x_final[3+par.index[target_specie]] * last_V # [mol]
     m_target = 1.0e-3 * data[f'n_{target_specie}'] * par.W[par.index[target_specie]] # [kg]
-    data.expansion_work = Work(cpar, enable_evaporation) # [J]
+    data.expansion_work = _work(cpar, enable_evaporation) # [J]
     data.dissipated_acoustic_energy = data.x_final[-1]  # [J]
     all_work = data.expansion_work + data.dissipated_acoustic_energy
     data.energy_efficiency = 1.0e-6 * all_work / m_target if m_target > 0.0 else 1.0e30 # [MJ/kg]
     data.target_specie = target_specie
     return data
 
-# keys of data: (except x_final)
+# keys of data: (except x_final and x_initial)
 keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'rho_L', 'gases', 'fractions', 'surfactant', 'c_L',
         'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency',
         'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
 
-# used in print_cpar
-def print_line(name, value, comment, print_it=False):
+def _print_line(name, value, comment, print_it=False):
+    """Prints a name=value pair in an organised way, with nicely formatted floats. Arguments:
+     * name: name of the parameter
+     * value: value of the parameter
+     * comment: comment (e.g. the unit of the parameter)
+     * print_it: if True, the function will print the text. If False, it will return with the text (sting)"""
+
     text = f'    {name} = '
     if type(value) == str:
         text += f'\'{value}\','
@@ -725,41 +759,51 @@ def print_line(name, value, comment, print_it=False):
     else:
         return f'{text: <48} # {comment}\n'
 
-# print cpar in an organised way (works with dict, dotdict)
 def print_cpar(cpar, without_code=False, print_it=True):
+    """Prints the control parameters (cpar) in an organised way. Arguments:
+     * cpar: control parameters (dict or dotdict)
+     * without_code: if True, an easier to read version is printed. If False, then the result is a valid python code
+     * print_it: if True, the function will print the text. If False, it will return with the text (sting)
+    """
+
     text = ''
     if not without_code:
         text += f'cpar = de.dotdict(dict(\n'
-    text += print_line('ID', int(cpar['ID']), 'ID of control parameter (not used during calculation)')
+    text += _print_line('ID', int(cpar['ID']), 'ID of control parameter (not used during calculation)')
     text += f'  # Initial conditions:\n'
-    text += print_line('R_E', float(cpar['R_E']), 'bubble equilibrium radius [m]')
-    text += print_line('ratio', float(cpar['ratio']), 'initial radius / equilibrium radius R_0/R_E [-]')
-    text += print_line('gases', cpar['gases'], 'indexes of species in initial bubble (list of species indexes)')
-    text += print_line('fractions', cpar['fractions'], 'molar fractions of species in initial bubble (list of fractions for every gas)')
+    text += _print_line('R_E', float(cpar['R_E']), 'bubble equilibrium radius [m]')
+    text += _print_line('ratio', float(cpar['ratio']), 'initial radius / equilibrium radius R_0/R_E [-]')
+    text += _print_line('gases', cpar['gases'], 'indexes of species in initial bubble (list of species indexes)')
+    text += _print_line('fractions', cpar['fractions'], 'molar fractions of species in initial bubble (list of fractions for every gas)')
     text += f'  # Ambient parameters:\n'
-    text += print_line('P_amb', float(cpar['P_amb']), 'ambient pressure [Pa]')
-    text += print_line('T_inf', float(cpar['T_inf']), 'ambient temperature [K]')
+    text += _print_line('P_amb', float(cpar['P_amb']), 'ambient pressure [Pa]')
+    text += _print_line('T_inf', float(cpar['T_inf']), 'ambient temperature [K]')
     text += f'  # Liquid parameters:\n'
-    text += print_line('alfa_M', float(cpar['alfa_M']), 'water accommodation coefficient [-]')
-    text += print_line('P_v', float(cpar['P_v']), 'vapour pressure [Pa]')
-    text += print_line('mu_L', float(cpar['mu_L']), 'dynamic viscosity [Pa*s]')
-    text += print_line('rho_L', float(cpar['rho_L']), 'density [kg/m^3]')
-    text += print_line('c_L', float(cpar['c_L']), 'sound speed [m/s]')
-    text += print_line('surfactant', float(cpar['surfactant']), 'surfactant (surface tension modfier) [-]')
+    text += _print_line('alfa_M', float(cpar['alfa_M']), 'water accommodation coefficient [-]')
+    text += _print_line('P_v', float(cpar['P_v']), 'vapour pressure [Pa]')
+    text += _print_line('mu_L', float(cpar['mu_L']), 'dynamic viscosity [Pa*s]')
+    text += _print_line('rho_L', float(cpar['rho_L']), 'density [kg/m^3]')
+    text += _print_line('c_L', float(cpar['c_L']), 'sound speed [m/s]')
+    text += _print_line('surfactant', float(cpar['surfactant']), 'surfactant (surface tension modfier) [-]')
     text += f'  # Excitation parameters: (excitation_type = {excitation_type})\n'
     for arg, unit in zip(excitation_args, excitation_units):
-        text += print_line(arg, float(cpar[arg]), f'[{unit}]')
+        text += _print_line(arg, float(cpar[arg]), f'[{unit}]')
     if not without_code:
         text += f'))\n\n# Calculate pressure/temperature dependent parameters:\n'
-        text += f'cpar.mu_L = de.Viscosity(cpar.T_inf)\n'
-        text += f'cpar.P_v = de.VapourPressure(cpar.T_inf)\n'
+        text += f'cpar.mu_L = de.viscosity(cpar.T_inf)\n'
+        text += f'cpar.P_v = de.vapour_pressure(cpar.T_inf)\n'
     if print_it:
         print(text)
     else:
         return text
 
-# This function prints the data dictionary in an organised way
 def print_data(cpar, data, print_it=True):
+    """Prints the data dictionary from get_data() in an organised way. Arguments:
+     * cpar: control parameters
+     * data: data dictionary from get_data()
+     * print_it: if True, the function will print the text. If False, it will return with the text (sting)
+    """
+
     text = f'Control parameters:\n'
     text += print_cpar(cpar, without_code=True, print_it=False)
     text += f'''\nSimulation info:
@@ -788,10 +832,13 @@ def print_data(cpar, data, print_it=True):
     else:
         return text
     
-# This function runs solve() and get_data(), then return with data
-# input and output is (or can be) normal dictionary
-# it is used for multithreading (e.g. in bruteforce_parameter_study.inp)
 def simulate(kwargs):
+    """This function runs solve() and get_data(), then return with data. 
+    Input and output is (or can be) normal dictionary. 
+    It is used for multithreading (e.g. in bruteforce_parameter_study.inp). 
+    The input (kwargs) is a dictionary with the keyword-argument pairs of solve().  
+    """
+
     args = dict(t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
     for key in kwargs:
         args[key] = kwargs[key]
@@ -806,21 +853,24 @@ def simulate(kwargs):
 
 def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LSODA_timeout=30, Radau_timeout=300, presentation_mode=False, plot_pressure=False, show_legend=False, show_cpar=True):
     """
-    This funfction solves the differential equation, and plots it.
+    This funfction runs solve(), get_data(), print_data(), and plots the numerical solution. 
+    By default, R(t) and T(t) are plotted on the first plot. 
+    The amount of chemical species are plotted on the second plot. 
+    Optionally, the internal and external pressure can be plotted on the third plot. 
     Parameters:
      * cpar: control parameters in a dictionary
-     * t_int: time interval to solve the diffeq in (default: [0, 1] [s])
+     * t_int: time interval to solve the diffeq in (default: [0, 1] [s]) |   
            graphs will be plotted in this intervall, if not default
      * n: how long should the plotted time interval be compared to the collapse time (default: 5 [-])
-     * base_name: save plots as .png (default: '' alias do not save)
-               use base_name='plot' --> plot_1.png, plot_2.png   
-               use base_name='images/plot' to save into images folder   
-               using a folder for images is recommend   
+     * base_name: save plots as image (default: '' alias do not save) | 
+               use base_name='plot' --> plot_1.png, plot_2.png |  
+               use base_name='images/plot' to save into images folder |  
+               using a folder for images is recommend |  
                this folder have to be created manually
      * format: format of the saved images (available: png, pdf, ps, eps, svg)
      * LSODA_timeout, Radau_timeout: timeout (maximum runtime) for different solvers in solve() in seconds
      * presentation_mode: if True, the plot will be in presentation mode (default: False)
-     * plot_pressure: if True, the pressure will be plotted (default: False)
+     * plot_pressure: if True, the internal and external pressure will be plotted (default: False)
      * show_legend: if True, the legend will be visible with every single species (default: False)
      * show_cpar: if True, the control parameters will be printed on the plot (default: False)
     """
@@ -874,19 +924,6 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
     if not presentation_mode: ax1.grid()
     
 # textbox with initial conditions
-    f'''Initial conditions:
-    {'$R_E$':<25} {1e6*cpar.R_E: .2f}  $[\mu m]$
-    {'$R_0/R_E$':<25} {cpar.ratio: .2f}  $[-]$
-    {'$P_{amb}$':<25} {1e-5*cpar.P_amb: .2f}  $[bar]$
-    {'$α_M$':<25} {cpar.alfa_M: .2f}  $[-]$
-    {'$T_inf$':<25} {cpar.T_inf-273.15: .2f}  $[°C]$
-    {'$P_{vapour}$':<25} {cpar.P_v: .1f}  $[Pa]$
-    {'$μ_L$':<25} {1000*cpar.mu_L: .2f} $[mPa*s]$
-    {'$ρ_L$':<25} {cpar.rho_L: .2f}  $[kg/m^3]$
-    {'$c_L$':<25} {cpar.c_L: .2f}  $[m/s]$
-    {'$surfactant$':<25} {cpar.surfactant: .2f}  $[-]$
-    {'Initial content:':<20}
-    ''' # TODO remove this
     text = f'Initial conditions:\n'
     text += f'    $R_E$ = {1e6*cpar.R_E: .2f} $[\mu m]$\n'
     if cpar.ratio != 1.0:
@@ -968,7 +1005,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
         )
 
     # plot settings
-    ax.set_ylim([1e-24, 5.0*max_mol[indexes_to_plot[-1]]])
+    ax.set_ylim([1e-24, 5.0*max(max_mol)])
     ax.set_yscale('log')
     if num_sol.t[end_index] < 1e-3:
         ax.set_xlabel('$t$ [μs]')
@@ -980,39 +1017,27 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
 
     plt.show()
 
-# plot pressure excitation
+# plot pressure excitation and internal pressure
     if plot_pressure:
         plt.rcParams.update({'font.size': 24 if presentation_mode else 18})
+        linewidth = 2.0 if presentation_mode else 1.0
         fig3 = plt.figure(figsize=(16, 9) if presentation_mode else (20, 6))
-        ax = fig3.add_subplot(axisbelow=True)
+        ax1 = fig3.add_subplot(axisbelow=True)
+        ax2 = ax1.twinx()
         ex_args = np.array([cpar[name] for name in excitation_args], dtype=np.float64)
         external_pressure = [1e-3*Excitation(time, cpar.P_amb, ex_args)[0] for time in num_sol.t[:end_index]] # [MPa]
-        ax.plot(t, external_pressure, color='orange', label='external pressure', linewidth = 2.0 if presentation_mode else 1.0)
+        ax1.plot(t, external_pressure, color='darkorange', label='external pressure', linewidth=linewidth)
+        ax2.plot(t, internal_pressure, color='g', label='internal pressure', linewidth=linewidth)
 
         if num_sol.t[end_index] < 1e-3:
-            ax.set_xlabel('$t$ [μs]')
+            ax1.set_xlabel('$t$ [μs]')
         else:
-            ax.set_xlabel('$t$ [ms]')
-        ax.set_ylabel('Pressure excitation [kPa]')
-        if not presentation_mode: ax.grid()
-
-        plt.show()
-
-# plot pressure
-    if plot_pressure:
-        plt.rcParams.update({'font.size': 24 if presentation_mode else 18})
-        fig4 = plt.figure(figsize=(16, 9) if presentation_mode else (20, 6))
-        ax = fig4.add_subplot(axisbelow=True)
-        ax.plot(t, internal_pressure, color = 'g', label='internal pressure', linewidth = 2.0 if presentation_mode else 1.0)
-
-        if num_sol.t[end_index] < 1e-3:
-            ax.set_xlabel('$t$ [μs]')
-        else:
-            ax.set_xlabel('$t$ [ms]')
-        ax.set_ylabel('Internal pressure [MPa]')
-        ax.set_ylim([5e-7*cpar['P_amb'], 2.0*max(internal_pressure)])
-        ax.set_yscale('log')
-        if not presentation_mode: ax.grid()
+            ax1.set_xlabel('$t$ [ms]')
+        ax1.set_ylabel('Pressure excitation [kPa]', color='darkorange')
+        ax2.set_ylabel('Internal pressure [MPa]', color='g')
+        ax2.set_ylim([5e-7*cpar['P_amb'], 2.0*max(internal_pressure)])
+        ax2.set_yscale('log')
+        if not presentation_mode: ax1.grid()
 
         plt.show()
     
@@ -1021,16 +1046,19 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
         if format not in ['png', 'pdf', 'ps', 'eps', 'svg']:
             print(colored(f'Invalid image format {format}, png is used instead. ','yellow'))
             format = 'png'
+        name = base_name + '_radial.' + format
+        if os.path.exists(name):
+            print(colored(f'Error: {name} already exists. ', 'red'))
+            return None
         try:
             if format == 'png':
                 metadata = {key: str(data[key]) for key in data.keys()}
             else:
                 metadata = {}
-            fig1.savefig(base_name+'_1.'+format, format=format, metadata=metadata, bbox_inches='tight')
-            fig2.savefig(base_name+'_2.'+format, format=format, metadata=metadata, bbox_inches='tight')
+            fig1.savefig(base_name+'_radial.'+format, format=format, metadata=metadata, bbox_inches='tight')
+            fig2.savefig(base_name+'_molar.'+format, format=format, metadata=metadata, bbox_inches='tight')
             if plot_pressure:
-                fig3.savefig(base_name+'_3.'+format, format=format, metadata=metadata, bbox_inches='tight')
-                fig4.savefig(base_name+'_4.'+format, format=format, metadata=metadata, bbox_inches='tight')
+                fig3.savefig(base_name+'_pressure.'+format, format=format, metadata=metadata, bbox_inches='tight')
         except:
             print(print(colored(f'Error in saving {base_name}_1.png','red')))
 
@@ -1042,6 +1070,8 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
 """________________________________Save to CSV________________________________"""
 
 def get_settings_and_info():
+    """Returns a string with information about the computer, and the settings of the simulation."""
+
     return f'''General information:
     Created: {datetime.now().strftime("%Y.%m.%d %H:%M:%S (YYYY.MM.DD HH:MM:SS)")}
     Computer name: {socket.gethostname()}
@@ -1067,6 +1097,11 @@ full_bubble_model settings:
 '''
 
 class Make_dir:
+    """Class for saving simulation data to csv files. Constructor arguments:
+     * folder_name: name of the folder to save the csv files into (e.g. 'folder', 'folder/subfolder')
+     * file_base_name: base name of the csv files (default: 'output_' --> 'output_1.csv', 'output_2.csv', ...)
+     * separator: separator character in the csv file (default: ',')"""
+
     # constructor
     def __init__(self, folder_name, file_base_name='output_', separator=','):
         self.folder_name = folder_name
@@ -1086,8 +1121,9 @@ class Make_dir:
             self.new = True
             os.mkdir(self.save_dir)
     
-    # makes a string from a list e.g. [1, 2, 3] -> '1,2,3'
-    def list_to_string(self, array):
+    def _list_to_string(self, array):
+        """ Returns a string from a list e.g. [1, 2, 3] -> '1,2,3'"""
+
         line = ''
         for element in array:
             element = str(element).replace(',', ' ').replace('[', '').replace(']', '')
@@ -1097,24 +1133,29 @@ class Make_dir:
                 line += element + self.separator
         return line[:-1]
         
-    # writes a data dict into the currently opened file
     def write_line(self, data):
-        line = self.list_to_string([data[key] for key in keys])
-        line += self.separator + self.list_to_string([x for x in data['x_initial'][:-1]] + [x for x in data['x_final'][:-1]])
+        """Writes the data dict into the currently opened csv as a new line. The line contains the values of the keys in the data dict."""
+
+        line = self._list_to_string([data[key] for key in keys])
+        line += self.separator + self._list_to_string([x for x in data['x_initial'][:-1]] + [x for x in data['x_final'][:-1]])
         self.file.write(line + '\n')
         self.lines += 1
         
-    # saves a numerical solution
     def write_solution(self, data, num_sol, file_base_name):
-        # create file containing data
+        """Writes the data dict and the numerical solution into two new csv files. Arguments:
+         * data: dictionary containing the simulation data from get_data()
+         * num_sol: solution of the differential equation from solve()
+         * file_base_name: base name of the csv files (e.g. 'name' --> 'name_data.csv', 'name_num_sol.csv')"""
+
+    # create file containing data
         file = os.path.join(self.save_dir, file_base_name + '_data.csv')
         file = open(file, 'w')
         # write header line
-        line = self.list_to_string(keys + ['R_0', 'R_dot_0', 'T_0'] + ['c_' + specie + '_0' for specie in par.species] + ['R_last', 'R_dot_last', 'T_last'] + ['c_' + specie + '_last' for specie in par.species])
+        line = self._list_to_string(keys + ['R_0', 'R_dot_0', 'T_0'] + ['c_' + specie + '_0' for specie in par.species] + ['R_last', 'R_dot_last', 'T_last'] + ['c_' + specie + '_last' for specie in par.species])
         file.write(line + '\n')
         # write data
-        line = self.list_to_string([data[key]] for key in keys)
-        line += self.separator + self.list_to_string([x for x in data.x_initial[:-1]] + [x for x in data.x_final[:-1]] + [data.expansion_work,data.dissipated_acoustic_energy,data.energy_efficiency])
+        line = self._list_to_string([data[key]] for key in keys)
+        line += self.separator + self._list_to_string([x for x in data.x_initial[:-1]] + [x for x in data.x_final[:-1]])
         file.write(line + '\n')
         file.close()
 
@@ -1122,16 +1163,19 @@ class Make_dir:
         file = os.path.join(self.save_dir, file_base_name + '_num_sol.csv')
         file = open(file, 'w')
         # write header line
-        line = self.list_to_string(['t', 'R', 'R_dot', 'T'] + ['c_' + specie for specie in par.species] + ['dissipated_acoustic_energy'])
+        line = self._list_to_string(['t', 'R', 'R_dot', 'T'] + ['c_' + specie for specie in par.species] + ['dissipated_acoustic_energy'])
         file.write(line + '\n')
         # write data
         for i in range(len(num_sol.t)):
-            line = self.list_to_string([num_sol.t[i]] + list(num_sol.y[:, i]))
+            line = self._list_to_string([num_sol.t[i]] + list(num_sol.y[:, i]))
             file.write(line + '\n')
         file.close()
     
-    # save any string
     def write_string(self, string, file_base_name):
+        """Writes the string into a new txt file. Also saves header with get_settings_and_info(). Arguments:
+         * string: arbitrary string to write into the file
+         * file_base_name: base name of the txt file (e.g. 'name' --> 'name.txt')"""
+        
         # create file
         file = os.path.join(self.save_dir, file_base_name + '.txt')
         try:
@@ -1145,8 +1189,10 @@ class Make_dir:
         file.write(string)
         file.close()
 
-    # create new file
     def new_file(self):
+        """Creates a new csv file from file_base_name and an unique number. (e.g. 'output_1.csv', 'output_2.csv', ...)
+         Automatically closes opened file. Use write_line() to write data into the file."""
+
         if self.is_opened:
             return None
         self.number = len([1 for file in os.listdir(self.save_dir) if file[-4:] == '.csv']) + 1
@@ -1156,11 +1202,12 @@ class Make_dir:
         self.number += 1
         self.lines = 0
         # write header line:
-        line = self.list_to_string(keys + ['R_0', 'R_dot_0', 'T_0'] + ['c_' + specie + '_0' for specie in par.species] + ['R_last', 'R_dot_last', 'T_last'] + ['c_' + specie + '_last' for specie in par.species])
+        line = self._list_to_string(keys + ['R_0', 'R_dot_0', 'T_0'] + ['c_' + specie + '_0' for specie in par.species] + ['R_last', 'R_dot_last', 'T_last'] + ['c_' + specie + '_last' for specie in par.species])
         self.file.write(line + '\n')
     
-    # close file
     def close(self):
+        """Closes the currently opened csv file."""
+
         if self.is_opened:
             self.file.close()
             self.is_opened = False
