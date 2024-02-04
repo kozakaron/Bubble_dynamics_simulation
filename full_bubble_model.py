@@ -34,7 +34,7 @@ except:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = True
+enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = True
 target_specie = 'NH3' # Specie to calculate energy effiqiency
