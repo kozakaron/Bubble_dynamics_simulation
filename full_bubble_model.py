@@ -138,8 +138,18 @@ def VapourPressure(T): return vapour_pressure(T) # Legacy name
 def Viscosity(T): return viscosity(T) # Legacy name
 
 
-def _initial_condition(cpar, evaporation=False):
-    """Calculates the initial condition of the bubble from the control parameters."""
+def _initial_condition(cpar, evaporation=False, extra_dims=0):
+    """Calculates the initial condition of the bubble from the control parameters. Arguments:
+     * cpar: control parameters
+     * evaporation: if True, water vapour will be present in the initial bubble (the water's partial pressure equals to the saturated water pressure)
+     * extra_dims: add extra dimensions to the initial condition array (initial value: 0.0) | 
+                   use it to plot extra variables (e.g. energy) during the simulation
+
+    Returns:
+     * IC: initial condition array
+     * lowpressure_error: if True, the pressure of the gas is negative
+     * lowpressure_warning: if True, the pressure during the expansion is lower, than the saturated water pressure
+    """
 
     if type(cpar) == dict:
         cpar = dotdict(cpar)
@@ -160,7 +170,7 @@ def _initial_condition(cpar, evaporation=False):
         print(print(colored(f'Warning, in _initial_condition(), sum of cpar.fractions isn\'t 1: {cpar.fractions}','yellow')))
     if len(cpar.gases) != len(cpar.fractions):
         print(print(colored(f'Warning, in _initial_condition(), len(cpar.gases) != len(cpar.fractions): {cpar.gases} != {cpar.fractions}','yellow')))
-    IC = np.zeros((par.K+4), dtype=np.float64)
+    IC = np.zeros((par.K + 4 + extra_dims), dtype=np.float64)
     R_0 = cpar.ratio * cpar.R_E
     
     # Equilibrium state
@@ -425,14 +435,15 @@ def _production_rate(T, H, S, c, P_amb, p, M):
 
 """________________________________Differential equation________________________________"""
 
-@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
-def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args): 
-    """ODE function for the bubble model. Returns the derivative of the state vector x at time t."""
+@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
+def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args, extra_dims=0): 
+    """ODE function for the bubble model. Returns the derivative of the state vector x at time t. 
+    Use extra_dims to plot extra variables (e.g. energy) during the simulation. Will impact the performance."""
 
     R = x[0]      # bubble radius [m]
     R_dot = x[1]  # [m/s]
     T = x[2]      # temperature [K]
-    c = x[3:-1]     # molar concentration [mol/cm^3]
+    c = x[3:3+par.K]     # molar concentration [mol/cm^3]
     M = np.sum(c) # sum of concentration
     X = c / M     # mole fraction [-]
     p = 0.1 * M * par.R_erg * T # Partial pressure of the gases [Pa]
@@ -471,7 +482,7 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args):
         c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
     else:
         n_net_dot = evap_energy = 0.0
-    dxdt[3:-1] = c_dot
+    dxdt[3:3+par.K] = c_dot
 # d/dt T
     sum_omega_dot = np.sum(omega_dot)
     Q_r_dot = 0.0
@@ -498,26 +509,36 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args):
         integrand_v = 16.0 * np.pi * mu_L * (R * R_dot*R_dot + R * R * R_dot * dxdt[1] / c_L)
         integrand_r = 4.0 * np.pi / c_L * R * R * R_dot * (R_dot * p + p_dot * R - 0.5 * rho_L * R_dot * R_dot * R_dot - rho_L * R * R_dot * dxdt[1])
 
-        dxdt[-1] = (integrand_th + integrand_v + integrand_r)
+        dxdt[3+par.K] = integrand_th + integrand_v + integrand_r
     else:
-        dxdt[-1] = 0.0
+        dxdt[3+par.K] = 0.0
+
+# PLOT EXTRA VARIABLES HERE
+    if extra_dims > 0:  # You might change this to plot whatever your heart desires
+        if enable_dissipated_energy and extra_dims==4:
+            dxdt[3+par.K+1] = integrand_th
+            dxdt[3+par.K+2] = integrand_v
+            dxdt[3+par.K+3] = integrand_r
+            dxdt[3+par.K+4] = integrand_th + integrand_v + integrand_r
     
     return dxdt
 
 
 """________________________________Solving________________________________"""
 
-def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
+def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0):
     """
     This funfction solves the differential equation, and returns the numerical solution.
     Parameters:
      * cpar: control parameters
      * t_int: time interval
-     * LSODA_timeout: timeout for LSODA solver
-     * Radau_timeout: timeout for Radau solver
+     * LSODA_timeout: timeout for LSODA solver in seconds
+     * Radau_timeout: timeout for Radau solver in seconds
+     * extra_dims: add extra dimensions to the initial condition array (initial value: 0.0) | 
+                   use it to plot extra variables (e.g. energy) during the simulation
 
     Returns:
-     * num_sol: numerical solution. use num_sol.t and num_sol.y to get the time and the solution
+     * num_sol: numerical solution. Use num_sol.t and num_sol.y to get the time and the solution. Can be None
      * error_code: see de.error_codes: dict, de.get_errors()
      * elapsed_time: elapsed time
     """
@@ -543,7 +564,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
             ex_args.append(0.0)
             print(colored(f'Warning! Pressure excitation argument \'{name} [{unit}]\' is not in cpar. 0 is used instead. ', 'yellow'))
     ex_args = np.array(ex_args, dtype=np.float64)
-    IC, lowpressure_error, lowpressure_warning = _initial_condition(cpar, enable_evaporation)
+    IC, lowpressure_error, lowpressure_warning = _initial_condition(cpar, enable_evaporation, extra_dims)
     if lowpressure_error:
         error_code += 100
         return None, error_code, 0.0
@@ -555,7 +576,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
         num_sol = func_timeout( # timeout block
             LSODA_timeout, solve_ivp,
             kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
-                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args) # f's arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # f's arguments
             )
         )
         if num_sol.success == False:
@@ -569,7 +590,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
             num_sol = func_timeout( # timeout block
                 Radau_timeout, solve_ivp, 
                 kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
-                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args)) # f's arguments
+                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims)) # f's arguments
             )
             if num_sol.success == False:
                 error_code += 40
@@ -710,7 +731,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data[f'n_{target_specie}'] = data.x_final[3+par.index[target_specie]] * last_V # [mol]
     m_target = 1.0e-3 * data[f'n_{target_specie}'] * par.W[par.index[target_specie]] # [kg]
     data.expansion_work = _work(cpar, enable_evaporation) # [J]
-    data.dissipated_acoustic_energy = data.x_final[-1]  # [J]
+    data.dissipated_acoustic_energy = data.x_final[3+par.K]  # [J]
     all_work = data.expansion_work + data.dissipated_acoustic_energy
     data.energy_efficiency = 1.0e-6 * all_work / m_target if m_target > 0.0 else 1.0e30 # [MJ/kg]
     data.target_specie = target_specie
@@ -839,19 +860,20 @@ def simulate(kwargs):
     The input (kwargs) is a dictionary with the keyword-argument pairs of solve().  
     """
 
-    args = dict(t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300)
+    args = dict(t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0)
     for key in kwargs:
         args[key] = kwargs[key]
     args = dotdict(args)
     cpar = dotdict(args.cpar)
-    num_sol, error_code, elapsed_time = solve(cpar, args.t_int, LSODA_timeout=args.LSODA_timeout, Radau_timeout=args.Radau_timeout)
+    num_sol, error_code, elapsed_time = solve(cpar, args.t_int, LSODA_timeout=args.LSODA_timeout, Radau_timeout=args.Radau_timeout, extra_dims=args.extra_dims)
     data = get_data(cpar, num_sol, error_code, elapsed_time)
     return dict(data)
 
 
 """________________________________Plotting________________________________"""
 
-def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LSODA_timeout=30, Radau_timeout=300, presentation_mode=False, plot_pressure=False, show_legend=False, show_cpar=True):
+def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LSODA_timeout=30.0, Radau_timeout=300.0,
+         presentation_mode=False, plot_pressure=False, plot_extra=False, show_legend=False, show_cpar=True):
     """
     This funfction runs solve(), get_data(), print_data(), and plots the numerical solution. 
     By default, R(t) and T(t) are plotted on the first plot. 
@@ -871,13 +893,24 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
      * LSODA_timeout, Radau_timeout: timeout (maximum runtime) for different solvers in solve() in seconds
      * presentation_mode: if True, the plot will be in presentation mode (default: False)
      * plot_pressure: if True, the internal and external pressure will be plotted (default: False)
+     * plot_extra: if True, extra dimensions will be plotted (default: False) | 
+                   To use this, you have to modify the end of the _f() function and set extra_dims and extra_dim_labels below. 
      * show_legend: if True, the legend will be visible with every single species (default: False)
      * show_cpar: if True, the control parameters will be printed on the plot (default: False)
     """
+
+# Extra dimensions setting. You may change this
+    if plot_extra:
+        extra_dims = 4
+    else:
+        extra_dims = 0
+    extra_dim_labels = ['Dissipated energy thermal term [J]', 'Dissipated energy viscous term [J]', 'Dissipated energy acoustic term [J]', 'Total dissipated energy [J]']
+
+# Solve
     if type(cpar) == dict:
         cpar = dotdict(cpar)
 
-    num_sol, error_code, elapsed_time = solve(cpar, t_int, LSODA_timeout, Radau_timeout)
+    num_sol, error_code, elapsed_time = solve(cpar, t_int, LSODA_timeout, Radau_timeout, extra_dims)
     data = get_data(cpar, num_sol, error_code, elapsed_time)
     
 # Print errors
@@ -899,12 +932,22 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
     R = num_sol.y[0, :end_index] # [m]
     R_dot = num_sol.y[1, :end_index] # [m/s]
     T = num_sol.y[2, :end_index] # [K]
-    c = num_sol.y[3:, :end_index] # [mol/cm^3]
+    c = num_sol.y[3:3+par.K, :end_index] # [mol/cm^3]
 
     V = 4.0 / 3.0 * (100.0 * R) ** 3 * np.pi # [cm^3]
     n = c * V
     if plot_pressure:
         internal_pressure = np.sum(n, axis=0) * par.R_g * T / V # [MPa]
+    if plot_extra:
+        if len(num_sol.y[:, 0]) != 4+par.K+extra_dims or extra_dims != len(extra_dim_labels):
+            print(colored('Error! The number of extra dimensions is incorrect. ', 'red'))
+            print(f'Number of dimensions: {len(num_sol.y[:, 0])=}')
+            print(f'Number of dimensions should be: {4+par.K+extra_dims=}')
+            print(f'Number of extra dimensions: {extra_dims=}')
+            print(f'Number of extra dimension labels: {len(extra_dim_labels)=}')
+            print_data(cpar, data)
+            return None
+        extra_plots = num_sol.y[3+par.K : 4+par.K+extra_dims, :end_index]
 
 # plot R and T
     linewidth = 2.0 if presentation_mode else 1.0
@@ -1040,6 +1083,25 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
         if not presentation_mode: ax1.grid()
 
         plt.show()
+
+# plot extra dimensions
+    if plot_extra:
+        plt.rcParams.update({'font.size': 24 if presentation_mode else 18})
+        linewidth = 2.0 if presentation_mode else 1.0
+        fig4 = plt.figure(figsize=(16, 9) if presentation_mode else (20, 6))
+        ax = fig4.add_subplot(axisbelow=True)
+        for extra_dim_label, extra_plot in zip(extra_dim_labels, extra_plots):
+            ax.plot(t, extra_plot, label=extra_dim_label, linewidth=linewidth)
+
+        if num_sol.t[end_index] < 1e-3:
+            ax.set_xlabel('$t$ [μs]')
+        else:
+            ax.set_xlabel('$t$ [ms]')
+        ax.set_ylabel('Extra dimensions')
+        if not presentation_mode: ax.grid()
+        ax.legend()
+
+        plt.show()
     
 # saving the plots
     if base_name != '':
@@ -1059,6 +1121,8 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
             fig2.savefig(base_name+'_molar.'+format, format=format, metadata=metadata, bbox_inches='tight')
             if plot_pressure:
                 fig3.savefig(base_name+'_pressure.'+format, format=format, metadata=metadata, bbox_inches='tight')
+            if plot_extra:
+                fig4.savefig(base_name+'_extra.'+format, format=format, metadata=metadata, bbox_inches='tight')
         except:
             print(print(colored(f'Error in saving {base_name}_1.png','red')))
 
@@ -1137,7 +1201,7 @@ class Make_dir:
         """Writes the data dict into the currently opened csv as a new line. The line contains the values of the keys in the data dict."""
 
         line = self._list_to_string([data[key] for key in keys])
-        line += self.separator + self._list_to_string([x for x in data['x_initial'][:-1]] + [x for x in data['x_final'][:-1]])
+        line += self.separator + self._list_to_string([x for x in data['x_initial'][:3+par.K]] + [x for x in data['x_final'][:3+par.K]])
         self.file.write(line + '\n')
         self.lines += 1
         
@@ -1155,7 +1219,7 @@ class Make_dir:
         file.write(line + '\n')
         # write data
         line = self._list_to_string([data[key]] for key in keys)
-        line += self.separator + self._list_to_string([x for x in data.x_initial[:-1]] + [x for x in data.x_final[:-1]])
+        line += self.separator + self._list_to_string([x for x in data.x_initial[:3+par.K]] + [x for x in data.x_final[:3+par.K]])
         file.write(line + '\n')
         file.close()
 
