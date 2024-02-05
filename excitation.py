@@ -3,7 +3,7 @@ This file contains different pressure excitation functions.
 Specify which one to use under "___Settings___" in full_bubble_model.py 
 
 Use getExcitation(excitation_type) to get the excitation function and its arguments. 
-Use plotExcitation(excitation_type, args) to plot the excitation function. 
+Use plotExcitation(excitation_type) to plot the excitation function. 
 """
 
 import numpy as np
@@ -15,7 +15,7 @@ import os
 
 def getExcitation(excitation_type='no_excitation'):
     """
-    Returns the pressure excitation function and the arguments it takes.
+    Returns the pressure excitation function and the arguments it takes. Use plotExcitation() to plot the excitation function.
     Available excitation types:
      * 'no_excitation': constant ambient pressure
      * 'two_sinusoids': two sinusoids with different frequencies and amplitudes, and a phase shift between them
@@ -24,7 +24,10 @@ def getExcitation(excitation_type='no_excitation'):
      * 'sin_impulse_flat_ends': sinusoid with only n amplitude cycles, the ends are smoothed out
      * 'sin_impulse': sinusoid with only n amplitude cycles, the ends are not smoothed out
      * 'sin_impulse_logf': same as 'sin_impulse', but log10(freq) is used instead of freq
-    
+     * 'double_sin_impulse': n cycle of two sinusoids with different frequencies and amplitudes and no phase shift; the 2nd frequency is freq_ratio times the 1st frequency
+     * 'multi_sin_impulse': 5 cycles of sinusoids with different frequencies and amplitudes for each cycle
+     * 'double_multi_sin_impulse': 5 cycles of two sinusoids with different frequencies and amplitudes for each cycle; 2 sine waves are used each time, similar to 'double_sin_impulse'
+     
     Returns:
      * Excitation: jitted excitation function
         \t* inputs: t (time, sec), P_amb (ambient pressure, Pa), args (list of control parameters)

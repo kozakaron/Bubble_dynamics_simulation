@@ -1,3 +1,36 @@
+"""
+This program contains the JIT compiled (high performance) ODE function (_f()), the numerical solvers (solve()), and several supplementary functions. 
+Before use, make sure to set the variables below "___Settings___" to your needs. 
+
+Usage:
+ * Use inp_data_extractor.py to turn a .inp file into parameters.py
+ * Set the parameters in the "___Settings___" section
+ * Import this file: from Bubble_dynamics_simulation import full_bubble_model as de
+ * Assemble the control parameter dictionary: cpar = de.example_cpar() | 
+   You may print cpar: de.print_cpar(cpar) | 
+   The result can be copied, modified and used as code. 
+ * You may solve the differential equation: num_sol, error_code, elapsed_time = de.solve(cpar)
+ * Retrieve post processing data: data = de.get_data(cpar, num_sol, error_code, elapsed_time)
+ * Use de.plot(cpar) to plot the results. This function has several costumization options and extra plots.
+
+ Notes:
+  * See the documentation or run help(de.solve) for more information. Substitute any function name instead of de.solve.
+  * Use the Make_dir class to save simulation results.
+  * See the example files. Example files start with a capital letter, and have the format .ipynb
+  * You may define any excitation function in excitation.py with a fix number of excitation control parameters.
+  * You can plot any extra variables with plot() by setting plot_extra=True. 
+    To do this, modify the bottom lines in the _f() function, and the first lines of plot().
+"""
+
+"""________________________________Settings________________________________"""
+
+enable_heat_transfer = True
+enable_evaporation = False
+enable_reactions = True
+enable_dissipated_energy = True
+target_specie = 'NH3' # Specie to calculate energy demand for
+excitation_type = 'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
+
 """________________________________Libraries________________________________"""
 
 from termcolor import colored
@@ -30,15 +63,6 @@ except:
         importlib.reload(excitation)
     except:
         print(colored(f'Error, \'excitation.py\' not found', 'red'))    
-
-"""________________________________Settings________________________________"""
-
-enable_heat_transfer = True
-enable_evaporation = False
-enable_reactions = True
-enable_dissipated_energy = True
-target_specie = 'NH3' # Specie to calculate energy effiqiency
-excitation_type = 'sin_impulse' # function to calculate pressure excitation
 
 """________________________________General________________________________"""
 
@@ -134,8 +158,12 @@ def viscosity(T):   # [K]
     return 1.856e-14 * np.exp(4209.0/T + 0.04527*T - 3.376e-5*T**2) # [Pa*s]
 
 # To retain compatibility with the old code
-def VapourPressure(T): return vapour_pressure(T) # Legacy name
-def Viscosity(T): return viscosity(T) # Legacy name
+def VapourPressure(T):
+    """Legacy function, use vapour_pressure(T) instead"""
+    return vapour_pressure(T)
+def Viscosity(T):
+    """Legacy function, use viscosity(T) instead"""
+    return viscosity(T)
 
 
 def _initial_condition(cpar, evaporation=False, extra_dims=0):
@@ -660,7 +688,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
      * elapsed_time: elapsed time from solve()
 
     Returns:
-     * data: dotdict with the post processing data (e.g. collapse time, energy efficiency, etc.)
+     * data: dotdict with the post processing data (e.g. collapse time, energy demand, etc.)
     """
 
     if type(cpar) == dict:
@@ -702,7 +730,8 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.m_target = 0.0
     data.expansion_work = 0.0
     data.dissipated_acoustic_energy = 0.0
-    data.energy_efficiency = 1.0e30
+    data.energy_demand = 1.0e30
+    data.energy_efficiency = 1.0e30 # legacy for data.energy_demand
     data.enable_heat_transfer = enable_heat_transfer
     data.enable_evaporation = enable_evaporation
     data.enable_reactions = enable_reactions
@@ -733,13 +762,14 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.expansion_work = _work(cpar, enable_evaporation) # [J]
     data.dissipated_acoustic_energy = data.x_final[3+par.K]  # [J]
     all_work = data.expansion_work + data.dissipated_acoustic_energy
-    data.energy_efficiency = 1.0e-6 * all_work / m_target if m_target > 0.0 else 1.0e30 # [MJ/kg]
+    data.energy_demand = 1.0e-6 * all_work / m_target if m_target > 0.0 else 1.0e30 # [MJ/kg]
+    data.energy_efficiency = data.energy_demand # legacy for data.energy_demand
     data.target_specie = target_specie
     return data
 
 # keys of data: (except x_final and x_initial)
 keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'rho_L', 'gases', 'fractions', 'surfactant', 'c_L',
-        'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_efficiency',
+        'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_demand',
         'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
 
 def _print_line(name, value, comment, print_it=False):
@@ -846,7 +876,7 @@ def print_data(cpar, data, print_it=True):
     T_max ={data.T_max: .2f} [K]
     expansion work = {data.expansion_work} [J]
     dissipated acoustic energy = {data.dissipated_acoustic_energy} [J]
-    energy efficiency = {data.energy_efficiency} [MJ/kg of {target_specie}]'''
+    energy demand = {data.energy_demand} [MJ/kg of {target_specie}]'''
     
     if print_it:
         print(text)

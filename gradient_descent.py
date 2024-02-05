@@ -1,3 +1,10 @@
+"""
+This module is used to optimize the energy demand by automatically adjusting the control parameters. 
+A search (using search() or gradient_descent()) can start in any point (e.g. in a random point from rand_point()). 
+In each step, the gradient is calculated with finite differences. The step is opposite to the normed gradient. 
+The step size is automatically controlled. To set ranges and arguments, see documentation_for_gradient_descent.pdf
+"""
+
 """________________________________Libraries________________________________"""
 
 import numpy as np   # matrices, math
@@ -7,7 +14,7 @@ import importlib   # reload changes you made
 from termcolor import colored   # colored error messages
 
 # my own file:
-already_imported = 'de' in globals()
+_already_imported = 'de' in globals()
 try:
     import full_bubble_model as de
 except:
@@ -15,7 +22,7 @@ except:
         import Bubble_dynamics_simulation.full_bubble_model as de
     except:
         print(colored(f'Error, \'full_bubble_model.py\' not found', 'red'))
-if already_imported: importlib.reload(de)   # reload changes you made
+if _already_imported: importlib.reload(de)   # reload changes you made
 
 
 """________________________________Helper functions________________________________"""
@@ -109,7 +116,7 @@ def _squeeze_into_ranges(point, ranges, padding=0.0, verbose=False):
 def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout):
     '''Runs the simulation, and returns with data extended with output (what we want to optimize). Arguments:
      * point: dict, control parameter which we want to evaluate
-     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_demand')
      * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
      
      Returns:
@@ -129,7 +136,7 @@ def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout):
 
     # return value to optimize
     output = data[to_optimize]
-    if not success: # WARNING this part is designed for to_optimize='energy_efficiency' only
+    if not success: # WARNING this part is designed for to_optimize='energy_demand' only
         output = 1.0e30
     elif output < 0.0 and data['expansion_work'] >= 0.0:
         output = 1.0e30
@@ -179,12 +186,12 @@ def _norm_gradient(gradient, verbose=False):
 
 """________________________________Calculate_gradient________________________________"""
 
-def _forward_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-6, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300, verbose=True):
+def _forward_difference(point, ranges, to_optimize='energy_demand', delta=1e-6, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300, verbose=True):
     '''
     Calculate the normed gradient of a point with forward difference. Arguments:
      * point: dict, cpar
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
-     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_demand')
      * delta: float, step size for the finite difference
      * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
      * verbose: bool, print stuff
@@ -231,11 +238,11 @@ def _forward_difference(point, ranges, to_optimize='energy_efficiency', delta=1e
     
     return _norm_gradient(gradient), datas
 
-def _central_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-6, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300, verbose=True):
+def _central_difference(point, ranges, to_optimize='energy_demand', delta=1e-6, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300, verbose=True):
     '''Calculate the normed gradient of a point with central difference. Arguments:
      * point: dict, cpar
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
-     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_demand')
      * delta: float, step size for the finite difference
      * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
      * verbose: bool, print stuff
@@ -304,7 +311,7 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, fir
     decays to be smaller than min_step*interval_width, or if gradient fails repeatedly.     Arguments:
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
      * path: str, save location. If None or '', datas will be returned (not recommended due to memory usage), otherwise last data will be returned
-     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_demand')
      * start_point: dict, cpar where the search starts
      * step_limit: int, maximum number of steps
      * first_step: float, first step size
