@@ -886,7 +886,7 @@ def print_data(cpar, data, print_it=True):
 def simulate(kwargs):
     """This function runs solve() and get_data(), then return with data. 
     Input and output is (or can be) normal dictionary. 
-    It is used for multithreading (e.g. in bruteforce_parameter_study.inp). 
+    It is used for multithreading (e.g. in Bruteforce_parameter_sweep.ipynb). 
     The input (kwargs) is a dictionary with the keyword-argument pairs of solve().  
     """
 

@@ -3,7 +3,7 @@
 
 This document is automatically generated from in code documentation. (multiline comments under function headers) 
 
-Date of generation: 2024.02.05 20:44:32 (YYYY.MM.DD HH:MM:SS) 
+Date of generation: 2024.02.06 15:50:10 (YYYY.MM.DD HH:MM:SS) 
 ## Table of contents
 
 0. [**inp_data_extractor.py**](#bookmark_inp_data_extractor)
@@ -416,7 +416,7 @@ External dependencies:
 	~~~
 	This function runs solve() and get_data(), then return with data. 
 	Input and output is (or can be) normal dictionary. 
-	It is used for multithreading (e.g. in bruteforce_parameter_study.inp). 
+	It is used for multithreading (e.g. in Bruteforce_parameter_sweep.ipynb). 
 	The input (kwargs) is a dictionary with the keyword-argument pairs of solve().  
 	~~~
 
