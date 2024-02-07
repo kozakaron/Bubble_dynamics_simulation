@@ -24,44 +24,58 @@ comment = '!'
 
 """________________________________Functions________________________________"""
 
-# Splits string by separator, and removes empty elements from the resulting list
-def separate(string: str, separator: str=' ') -> list:
+def  _separate(string: str, separator: str=' ') -> list:
+    """Splits string by separator, and removes empty elements from the resulting list. Arguments:
+     * string (str): string to be split
+     * separator (str): separator for splitting"""
+    
     ret = string.split(separator)
     ret.append('')
     while len(ret)>0 and ret[-1] == '':
         ret.remove('')
     return ret
 
-# Finds the first line containing looking_for
-def find(looking_for: str, lines: list) -> int:
+def _find(looking_for: str, lines: list) -> int:
+    """Finds the first line containing looking_for. Arguments:
+     * looking_for (str): string to be found
+     * lines (list): list of strings to be searched in"""
+
     i = 0
     while i < len(lines) and not looking_for in lines[i]:
         i += 1
     if i >= len(lines):
-        print(colored(f'Error in find(), \'{looking_for}\' not found', 'red'))
+        print(colored(f'Error in _find(), \'{looking_for}\' not found', 'red'))
         return -1
     return i
 
-# Changes order of lines in array, so that it will be ordered as new instead of original
-def rearrange(array: list, original: list, new: list) -> list:
+def _rearrange(array: list, original: list, new: list) -> list:
+    """Changes order of lines in array, so that it will be ordered as new instead of original. Arguments:
+     * array (list): array to be rearranged
+     * original (list): original order
+     * new (list): new order"""
+
     newArray = []
     if len(array) != len(original) or len(array) != len(new):
-        print(colored(f'Warning in rearrange(), lists have different lengths', 'yellow'))
+        print(colored(f'Warning in _rearrange(), lists have different lengths', 'yellow'))
     for orig in original:
         if not orig in new:
-            print(colored(f'Warning in rearrange(), \'{orig}\' is in original, but not in new', 'yellow'))
+            print(colored(f'Warning in _rearrange(), \'{orig}\' is in original, but not in new', 'yellow'))
     for i in range(len(new)):
         index = 0
         if new[i] in original:
             index = original.index(new[i])
         else:
-            print(colored(f'Warning in rearrange(), \'{new[i]}\' is in new, but not in original', 'yellow'))
+            print(colored(f'Warning in _rearrange(), \'{new[i]}\' is in new, but not in original', 'yellow'))
         newArray.append(array[index])
     return newArray
 
-# Prints a 1D or 2D array or list
-# Can leave comments above columns and after lines
 def print_array(array, width=0, comments=[], columns=[], max_len=0):
+    """Prints a 1D or 2D array or list. Can leave comments above columns and after lines. Arguments:
+     * array (list or np.ndarray): array to be printed
+     * width (int): width of each element in characters
+     * comments (list): list of comments after each line
+     * columns (list): list of comments above each column
+     * max_len (int): maximum number of elements in one line, if 0, all elements are printed in one line"""
     # empty array
     if len(array) == 0:
         return '[]'
@@ -151,7 +165,9 @@ def print_array(array, width=0, comments=[], columns=[], max_len=0):
         
 """________________________________Line seperation, remove comments________________________________"""
 
-def get_lines(text):  
+def _get_lines(text):  
+    """Separates text into lines, removes comments and empty lines. """
+
     text = text.upper()
     text = text.replace('\\\\', '\\')
     text = text.replace('\t', ' ')
@@ -162,7 +178,7 @@ def get_lines(text):
     text = text.replace('\a', '')
     text = text.replace('END', '\nEND')
 
-    all_lines = separate(text, '\n')
+    all_lines =  _separate(text, '\n')
     if len(all_lines) < 1:
         print(colored(f'Error, can not separate lines. Check if line ends are \'\\n\'', 'red'))
     all_lines.append('END')
@@ -179,15 +195,17 @@ def get_lines(text):
 
 """________________________________Elements________________________________"""
 
-def get_elements(lines):
-    i = find('ELEM', lines)
+def _get_elements(lines):
+    """Gets the list of elements. e.g. ['O','H','N','HE','AR']"""
+
+    i = _find('ELEM', lines)
     elements = []
     while not 'END' in lines[i]:
         line = lines[i]
         line = line.replace('ELEMENTS', '')
         line = line.replace('ELEM', '')
         line = line.replace('/', ' ')
-        all_elements = separate(line, ' ')
+        all_elements =  _separate(line, ' ')
         for element in all_elements:
             if element in data.W:
                 if element in elements:
@@ -204,15 +222,17 @@ def get_elements(lines):
 
 """________________________________Species data________________________________"""
 
-def get_species(lines, elements):
+def _get_species(lines, elements):
+    """Gets species, their molar mass and thermal. e.g. ['NH3', 'H2', 'H', 'NH2', 'NH', 'N', 'NNH', 'N2H4', 'N2H3', 'N2H2', 'H2NN', 'N2']"""
+
   # Get species
-    i = find('SPEC', lines)
+    i = _find('SPEC', lines)
     species = []
     while not 'END' in lines[i]:
         line = lines[i]
         line = line.replace('SPECIES', '')
         line = line.replace('SPEC', '')
-        species += separate(line, ' ')
+        species +=  _separate(line, ' ')
         i += 1
 
 # Get W and lambda for species
@@ -259,21 +279,23 @@ def get_species(lines, elements):
 
 """________________________________Thermodynamic data________________________________"""
 
-def get_thermo(lines, species):
+def _get_thermo(lines, species):
+    """Gets thermodynamic data for species. (temperature range, low and high NASA coefficients)"""
+
     TempRange = []
     a_low = []
     a_high = []
     materials = []
 
-    i = find('THER', lines)
+    i = _find('THER', lines)
     if 'THERMO ALL' in lines[i]:
         i += 2
 
     while not 'END' in lines[i]:
-        first_line = separate(lines[i], ' ')
+        first_line =  _separate(lines[i], ' ')
         if 'TEMP' in first_line:
             i += 1
-            while separate(lines[i], ' ')[0].replace('+', '', 2).replace('-', '', 2).replace('.', '', 1).replace('E', '', 1).isnumeric():
+            while  _separate(lines[i], ' ')[0].replace('+', '', 2).replace('-', '', 2).replace('.', '', 1).replace('E', '', 1).isnumeric():
                 i+=1        
 
         if not first_line[0] in materials:
@@ -291,7 +313,7 @@ def get_thermo(lines, species):
                 line = line.replace('E-', '_')
                 line = line.replace('-', ' -')
                 line = line.replace('_', 'E-')
-                other_lines += separate(line, ' ')
+                other_lines +=  _separate(line, ' ')
 
             array_line = [float(num) for num in other_lines]
             a_high.append(array_line[0:7])
@@ -299,15 +321,17 @@ def get_thermo(lines, species):
 
         i += 4
 
-    TempRange = rearrange(TempRange, materials, species)
-    a_low = rearrange(a_low, materials, species)
-    a_high = rearrange(a_high, materials, species)
+    TempRange = _rearrange(TempRange, materials, species)
+    a_low = _rearrange(a_low, materials, species)
+    a_high = _rearrange(a_high, materials, species)
 
     return TempRange, a_low, a_high
 
 """________________________________Reactions________________________________"""
 
-def get_reactions(lines, species):
+def _get_reactions(lines, species):
+    """Gets reaction data. (reaction equations, Arrhenius parameters, third body constants, pressure dependent reactions: Lindemann, Troe, SRI, PLOG parameters)"""
+
   # Declare lists
     reactions = []
     numbers = []
@@ -331,13 +355,13 @@ def get_reactions(lines, species):
 
   # Get reaction datas
     keywords = ['LOW', 'TROE', 'SRI', 'HIGH', 'REV', 'DUP', 'LT', 'TDEP', 'XSMI', 'PLOG', 'FORD', 'RORD', 'MOME', 'EXCI', 'JAN', '/']
-    i = find('REAC', lines) + 1
+    i = _find('REAC', lines) + 1
 
     while not 'END' in lines[i]: 
         reaction_line = lines[i]
         reaction_line = reaction_line.replace('<=>', '=')
         reaction_line = reaction_line.replace('=>', '>')
-        reaction_line = separate(reaction_line, ' ')
+        reaction_line =  _separate(reaction_line, ' ')
         reactions.append(''.join(reaction_line[:-3]).replace('>', '=>'))
         numbers.append(len(reactions)-1)
         A.append(float(reaction_line[-3]))
@@ -366,13 +390,13 @@ def get_reactions(lines, species):
                 isPressureDependent = True
                 line = line.replace('LOW', '')
                 line = line.replace('/', '')
-                line = separate(line, ' ')
+                line =  _separate(line, ' ')
                 ReacConst.append([float(line[-3]), float(line[-2]), float(line[-1])])
             elif 'TROE' in line:
                 isTroe = True
                 line = line.replace('TROE', '')
                 line = line.replace('/', '')
-                line = separate(line, ' ')
+                line =  _separate(line, ' ')
                 if len(line) >= 4:
                     Troe.append([float(line[-4]), float(line[-3]), float(line[-2]), float(line[-1])])
                 else:
@@ -382,7 +406,7 @@ def get_reactions(lines, species):
                 isSRI = True
                 line = line.replace('SRI', '')
                 line = line.replace('/', '')
-                line = separate(line, ' ')
+                line =  _separate(line, ' ')
                 if len(line) == 5:
                     SRI.append([float(line[-5]), float(line[-4]), float(line[-3]), float(line[-2]), float(line[-1])])
                 else:
@@ -396,13 +420,13 @@ def get_reactions(lines, species):
                 line = line.replace('MX', '')
                 line = line.replace('SP', '')
                 line = line.replace('/', '')
-                line = separate(line, ' ')
+                line =  _separate(line, ' ')
             
                 Plog.append([float(line[-4]), float(line[-3]), float(line[-2]), float(line[-1])])
             elif '/' in line:
                 line = line.replace('/ ', ' ')
                 line = line.replace('/', ' ')
-                line = separate(line, ' ')
+                line =  _separate(line, ' ')
                 alfa_line = np.ones((len(species)), dtype=np.float64)
                 isManualThirdBodyCoefficients = True
                 j = 0
@@ -438,7 +462,19 @@ def get_reactions(lines, species):
         if isPLOG and len(Plog) % 3 != 0:
             print(colored(f'Warning, only 3 lines of PLOG is supported in reaction \'{reactions[-1]}\'', 'yellow'))
 
-        
+    for i in LindemannIndexes:
+        if i not in PressureDependentIndexes:
+            print(colored(f'Error, Lindemann reaction {i} (\'{reactions[i]}\') is not in PressureDependentIndexes', 'red'))
+    for i in TroeIndexes:
+        if i not in PressureDependentIndexes:
+            print(colored(f'Error, Troe reaction {i} (\'{reactions[i]}\') is not in PressureDependentIndexes', 'red'))
+    for i in SRIIndexes:
+        if i not in PressureDependentIndexes:
+            print(colored(f'Error, SRI reaction {i} (\'{reactions[i]}\') is not in PressureDependentIndexes', 'red'))
+    for i in PressureDependentIndexes:
+        if not (i in LindemannIndexes or i in TroeIndexes or i in SRIIndexes):
+            print(colored(f'Error, reaction {i} (\'{reactions[i]}\') is in PressureDependentIndexes but not in LindemannIndexes or TroeIndexes or SRIIndexes', 'red'))
+
     try:
         if len(Plog) == 0:
             Plog.append([])
@@ -456,7 +492,7 @@ def get_reactions(lines, species):
     ReacConst = np.array(ReacConst)
     
   # Correct units
-    i = find('REAC', lines)
+    i = _find('REAC', lines)
     if len(PlogIndexes) != 0: Plog[:, 0] *= 1.0e5   # convert bar to Pa
     if 'MOLEC' in lines[i]: # MOLECULE
         print(colored(f'Note, pre-exponential factor is modified from units of [cm^3/molecule/s] to [cm^3/mol/s]', 'blue'))
@@ -516,7 +552,9 @@ def get_reactions(lines, species):
 
 """________________________________Reaction matrixes (nu)________________________________"""
 
-def get_nu(reactions, species, W):
+def _get_nu(reactions, species, W):
+    """Gets reaction matrixes (nu_forward, nu_backward) and indexes of irreversible reactions"""
+
     nu_forward = np.zeros((len(reactions), len(species)), dtype=int)
     nu_backward = np.zeros((len(reactions), len(species)), dtype=int)
     IrreversibleIndexes = []
@@ -529,10 +567,10 @@ def get_nu(reactions, species, W):
         reaction = reaction.replace('(+M)', '')
         reaction = reaction.replace('()', '')
         reaction = reaction.replace('>', '=')
-        forward = separate(reaction, '=')[0]
-        backward = separate(reaction, '=')[1]
-        forward = separate(forward, '+')
-        backward = separate(backward, '+')
+        forward =  _separate(reaction, '=')[0]
+        backward =  _separate(reaction, '=')[1]
+        forward =  _separate(forward, '+')
+        backward =  _separate(backward, '+')
         for f in forward:
             num = 1
             if f[0] in digits:
@@ -573,6 +611,9 @@ def get_nu(reactions, species, W):
 """________________________________Printing to file________________________________"""
 
 def extract(path):
+    """Extracts data from .inp file and creates parameters.py in the current working directory. Arguments:
+     * path (str): path to .inp file"""
+
   # Open file
     print(f'path={path}')
     try:
@@ -583,18 +624,18 @@ def extract(path):
         print(colored(f'Error, \'{path}\' not found', 'red'))
     
   # Extract data
-    lines = get_lines(text)
-    elements = get_elements(lines)
-    species, W, lambdas = get_species(lines, elements)
-    TempRange, a_low, a_high = get_thermo(lines, species)
+    lines = _get_lines(text)
+    elements = _get_elements(lines)
+    species, W, lambdas = _get_species(lines, elements)
+    TempRange, a_low, a_high = _get_thermo(lines, species)
     (reactions, A, B, E,
         ThirdBodyIndexes, alfa,
         PressureDependentIndexes,
             LindemannIndexes, ReacConst,
             TroeIndexes, Troe,
             SRIIndexes, SRI,
-        PlogIndexes, Plog) = get_reactions(lines, species)
-    nu_forward, nu_backward, IrreversibleIndexes = get_nu(reactions, species, W)
+        PlogIndexes, Plog) = _get_reactions(lines, species)
+    nu_forward, nu_backward, IrreversibleIndexes = _get_nu(reactions, species, W)
     
   # Create parameters.py
     line_start = '\n\"\"\"________________________________'

@@ -1,3 +1,10 @@
+"""
+This module is used to optimize the energy demand by automatically adjusting the control parameters. 
+A search (using search() or gradient_descent()) can start in any point (e.g. in a random point from rand_point()). 
+In each step, the gradient is calculated with finite differences. The step is opposite to the normed gradient. 
+The step size is automatically controlled. To set ranges and arguments, see documentation_for_gradient_descent.pdf
+"""
+
 """________________________________Libraries________________________________"""
 
 import numpy as np   # matrices, math
@@ -7,7 +14,7 @@ import importlib   # reload changes you made
 from termcolor import colored   # colored error messages
 
 # my own file:
-already_imported = 'de' in globals()
+_already_imported = 'de' in globals()
 try:
     import full_bubble_model as de
 except:
@@ -15,12 +22,12 @@ except:
         import Bubble_dynamics_simulation.full_bubble_model as de
     except:
         print(colored(f'Error, \'full_bubble_model.py\' not found', 'red'))
-if already_imported: importlib.reload(de)   # reload changes you made
+if _already_imported: importlib.reload(de)   # reload changes you made
 
 
 """________________________________Helper functions________________________________"""
 
-def rand_point(ranges, ID=0, padding=0.1):
+def rand_point(ranges, ID=0, padding=0.001):
     '''Generates a random cpar dict within ranges. Arguments:
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
      * ID: int, ID for the point
@@ -52,7 +59,7 @@ def rand_point(ranges, ID=0, padding=0.1):
 
     return point
 
-def in_range(point, ranges):
+def _in_range(point, ranges):
     '''Checks if a cpar is in ranges or not. Arguments:
      * point: dict, cpar
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
@@ -73,7 +80,7 @@ def in_range(point, ranges):
             return False
     return True
 
-def squeeze_into_ranges(point, ranges, padding=0.0, verbose=False):
+def _squeeze_into_ranges(point, ranges, padding=0.0, verbose=False):
     '''Manages out of range points. Arguments:
      * point: dict, cpar (will be changed)
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
@@ -109,7 +116,7 @@ def squeeze_into_ranges(point, ranges, padding=0.0, verbose=False):
 def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout):
     '''Runs the simulation, and returns with data extended with output (what we want to optimize). Arguments:
      * point: dict, control parameter which we want to evaluate
-     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_demand')
      * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
      
      Returns:
@@ -129,7 +136,7 @@ def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout):
 
     # return value to optimize
     output = data[to_optimize]
-    if not success: # WARNING this part is designed for to_optimize='energy_efficiency' only
+    if not success: # WARNING this part is designed for to_optimize='energy_demand' only
         output = 1.0e30
     elif output < 0.0 and data['expansion_work'] >= 0.0:
         output = 1.0e30
@@ -138,12 +145,20 @@ def evaluate(point, to_optimize, t_int, LSODA_timeout, Radau_timeout):
     return data, success
 
 def evaluate_kwargs(kwargs):
+    """Call evaluate() with a dictionary containing the arguments. Arguments:
+    * kwargs: dict, containing the arguments for evaluate()
+        
+    Returns:
+    * data: dict, simulation results from de.get_data()
+    * point: dict, control parameter which we want to evaluate
+    """
+
     point = kwargs['point']
     data, success = evaluate(**kwargs)
     point['success'] = success
     return [dict(data), dict(point), success]
 
-def norm_gradient(gradient, verbose=False):
+def _norm_gradient(gradient, verbose=False):
     '''Calculates the norm of the gradient. Arguments:
      * gradient: dict, gradient of the point (will be changed)
      
@@ -171,11 +186,12 @@ def norm_gradient(gradient, verbose=False):
 
 """________________________________Calculate_gradient________________________________"""
 
-def forward_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-6, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300, verbose=True):
-    '''Calculate the normed gradient of a point with forward difference. Arguments:
+def _forward_difference(point, ranges, to_optimize='energy_demand', delta=1e-6, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300, verbose=True):
+    '''
+    Calculate the normed gradient of a point with forward difference. Arguments:
      * point: dict, cpar
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
-     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_demand')
      * delta: float, step size for the finite difference
      * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
      * verbose: bool, print stuff
@@ -220,13 +236,13 @@ def forward_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-
         else:
             gradient[key] = 0.0
     
-    return norm_gradient(gradient), datas
+    return _norm_gradient(gradient), datas
 
-def central_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-6, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300, verbose=True):
+def _central_difference(point, ranges, to_optimize='energy_demand', delta=1e-6, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300, verbose=True):
     '''Calculate the normed gradient of a point with central difference. Arguments:
      * point: dict, cpar
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
-     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_demand')
      * delta: float, step size for the finite difference
      * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
      * verbose: bool, print stuff
@@ -281,7 +297,7 @@ def central_difference(point, ranges, to_optimize='energy_efficiency', delta=1e-
             gradient[key] = 0.0
             if verbose: print(colored(f'\tError, central difference failed', 'red'))
     
-    return norm_gradient(gradient), datas
+    return _norm_gradient(gradient), datas
     
 """________________________________Search________________________________"""
 
@@ -289,18 +305,16 @@ def search(kwargs):
     '''Call gradient_descent() with a dictionary containing the arguments.'''
     return gradient_descent(**kwargs)
 
-def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max_step_until_decay=10, first_step=0.2, decay=0.5, min_step=1e-4, delta=1e-6, verbose=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
+def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, first_step=0.01, min_step=1e-4, delta=1e-6, verbose=True, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300):
     '''Gradient search. Starts at start_point, always go in the direction of the local gradient. Step size decays, if the output at the next step would
     bigger then at the current step, or if too many steps were taken without decay (to avoid back &forth stepping). Search ends, if the step_size
     decays to be smaller than min_step*interval_width, or if gradient fails repeatedly.     Arguments:
      * ranges: dict, ranges of the parameters ([single_value] or [min, max])
      * path: str, save location. If None or '', datas will be returned (not recommended due to memory usage), otherwise last data will be returned
-     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_efficiency')
+     * to_optimize: str, name of the output we want to optimize (e.g. 'energy_demand')
      * start_point: dict, cpar where the search starts
      * step_limit: int, maximum number of steps
-     * max_step_until_decay: int, maximum number of steps without decay
      * first_step: float, first step size
-     * decay: float, decay rate
      * min_step: float, minimum step size
      * delta: float, step size for the finite difference
      * t_int, LSODA_timeout, Radau_timeout: see de.solve() for more info
@@ -325,28 +339,28 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
     start = time.time()
     step_size = first_step
     step_num = 0
-    steps_since_last_decay = 0
     fail_num = 0
     start_point = de.dotdict(start_point)
+    change = dict()
     
     absolute_best = 1e30
     last_best = 1e30
     last_bests = []
 
     # learning
-    while step_num < step_limit and min_step < step_size and fail_num < 5:
+    while step_num < step_limit and min_step < step_size and fail_num < 3:
         # calculate gradient (try forward difference, if it fails, try central difference, if that fails too, repeat last step)
-        gradient, current_datas = forward_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, verbose=verbose)
+        gradient, current_datas = _forward_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, verbose=verbose)
         if gradient is None:
-            gradient, current_datas = central_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, verbose=verbose)
+            gradient, current_datas = _central_difference(start_point, ranges, to_optimize, delta=delta, **solver_kwargs, verbose=verbose)
         if gradient is None:
             print(colored(f'\tError, gradient can not be calculated in point {start_point}', 'red'))
-            if step_num == 0:
+            if len(change) == 0:
                 return None, [1.0e30], time.time()-start
             else:
                 for key in keys:
                     start_point[key] += change[key]
-                start_point = squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
+                start_point = _squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
                 step_num += 1
                 fail_num += 1
                 continue
@@ -355,52 +369,50 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
         last_best = min([data['output'] for data in current_datas])
         last_bests.append(last_best)
         absolute_best = min(absolute_best, last_best)
-        if verbose:
+        if verbose: 
             print(colored(f'{step_num}. step; {last_best=: .5e}; {absolute_best=: .5e}; {step_size=: .5f}', 'green'))
             point_str = ''.join([f'{key}={start_point[key]: e}; ' for key in keys if isinstance(start_point[key], float)])
             print(f'\tpoint   =({point_str})')
 
-        # calculate change (step's direction)
-        change = dict()
-        for key in keys:
-            interval_width = abs(ranges[key][1] - ranges[key][0])
-            change[key] = -step_size * gradient[key] * interval_width
-
-
-        # decay
-        # calculate where the next point would be
-        trial_point = de.copy(start_point)
-        for key in keys:
-            trial_point[key] += change[key]
-        trial_point = squeeze_into_ranges(trial_point, ranges, padding=10.0*delta)
-        trial_point_data, success = evaluate(trial_point, to_optimize, **solver_kwargs)
-        next_output = trial_point_data['output']
-        current_datas.append(trial_point_data)
-        if success:
-            # decay if last decay was too long ago, can't be first decay this way: avoid back and forth steps
-            forced_decay = False
-            if step_size != first_step and steps_since_last_decay > max_step_until_decay:
-                forced_decay = True
-                if verbose: print(colored(f'\tforced decay: {forced_decay}', 'magenta'))
+        # make 5 steps in the direction of the gradient
+        trial_outputs = []
+        modifiers = [0.25, 0.5, 1.0, 2.0, 4.0]
+        for modifier in modifiers:
+            trial_point = de.copy(start_point)
+            for key in keys:
+                trial_point[key] -= modifier * step_size * gradient[key] * abs(ranges[key][1] - ranges[key][0])
+            trial_point = _squeeze_into_ranges(trial_point, ranges, padding=10.0*delta)
+            trial_data, success = evaluate(trial_point, to_optimize, **solver_kwargs)
+            current_datas.append(trial_data)
+            if success:
+                trial_outputs.append(trial_data['output'])
             else:
-                forced_decay = False
-            # decay if next step is worse than the last best
-            if next_output > last_best or forced_decay:
-                steps_since_last_decay = 0
-                step_size *= decay
-                for key in keys:
-                    change[key] *= decay
-                if verbose: print(colored(f'\tdecayed: {step_size=: .4f}; next_output={next_output}', 'magenta'))
+                trial_outputs.append(1.0e30)
+
+        # choose the best trial point and modify step_size accordingly
+        if any([output < 1.0e30 for output in trial_outputs]):  # if there is any successfully evaluated trial point
+            best_modifier = modifiers[trial_outputs.index(min(trial_outputs))]
+            step_size *= best_modifier
         else:
-            if verbose: print(colored(f'\tError, simulation failed in next point', 'red'))
+            if verbose: print(colored(f'\tError, simulation failed in all trial points, {fail_num=}. ', 'red'))
+            if len(change) == 0:
+                return None, [1.0e30], time.time()-start
+            else:
+                for key in keys:
+                    start_point[key] += change[key]
+                start_point = _squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
+                step_num += 1
+                fail_num += 1
+                continue
 
         # make the step
         for key in keys:
+            change[key] = -step_size * gradient[key] * abs(ranges[key][1] - ranges[key][0])
             start_point[key] += change[key]
-        start_point = squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
-        next_point_data, success = evaluate(start_point, to_optimize, **solver_kwargs)
+        start_point = _squeeze_into_ranges(start_point, ranges, padding=10.0*delta)
         if verbose:
-            print(f'\toutput  ={next_point_data["output"]}; success={success}')
+            next_point_data, success = evaluate(start_point, to_optimize, **solver_kwargs)
+            print(f'\toutput  ={next_point_data["output"]}; success={success}; modifier={best_modifier}; ')
         
         # print stuff
         if file is not None:
@@ -412,7 +424,6 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
         del current_datas
 
         step_num += 1
-        steps_since_last_decay += 1
         fail_num = 0
         if verbose:
             gradient_str = ''.join([f'{key}={gradient[key]: 6.4f}; ' for key in keys])
@@ -424,6 +435,6 @@ def gradient_descent(ranges, path, to_optimize, start_point, step_limit=100, max
     elapsed_time = end-start
     if file is not None:
         file.close()
-        return dict(next_point_data), last_bests, elapsed_time
+        return dict(trial_data), last_bests, elapsed_time
     else:
         return all_datas, last_bests, elapsed_time
