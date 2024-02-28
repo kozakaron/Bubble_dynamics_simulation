@@ -10,6 +10,7 @@ model = 'chemkin_USON2022'
 import numpy as np
 
 """________________________________Physical constants________________________________"""
+
 c_L            = 1483.0                   # Liquid sound speed at 30 °C [m/s]
 rho_L          = 998.2                    # Liquid density [kg/m^3]
 sigma          = 0.07197                  # Surface tension [N/m]
@@ -30,21 +31,27 @@ absolute_zero  = 273.15                   # Zero °C in Kelvin
 
 
 """________________________________Species________________________________"""
+
 elements = np.array(['H','O'])
 #                            0,         1,         2,         3,         4,         5,         6,         7,         8,         9
 species = np.array([       'O',       'H',      'H2',      'OH',      'O2',     'H2O',     'HO2',    'H2O2',      'O3',    'OHEX'])
+
 # molar mass [g/mol]
 W = np.array([         15.9994,   1.00797,   2.01594,  17.00737,   31.9988,  18.01534,  33.00677,  34.01474,   47.9982,  17.00737], dtype=np.float64)
+
 # thermal conductivity [W / m / K]
 lambdas = np.array([       0.0,       0.0,    0.1805,       0.0,   0.02658,     0.016,       0.0,    0.5863,   0.01985,       0.0], dtype=np.float64)
+
 index = dict(
          O= 0,      H= 1,     H2= 2,     OH= 3,     O2= 4,    H2O= 5,    HO2= 6,   H2O2= 7,     O3= 8,   OHEX= 9
 )
+
 indexOfWater = 5
 K = 10   # Number of species
 
 
 """________________________________NASA polynomials________________________________"""
+
 N = 5    # degree of polynomials
 TempRange = np.array([
     #   T_low   T_high    T_mid 
@@ -92,6 +99,7 @@ a_high = np.array([
 
 
 """________________________________Reaction constants________________________________"""
+
 I = 34    # Number of reactions
 # Pre-exponential factors [cm^3/mol/s v 1/s]
 A = np.array([
@@ -128,6 +136,7 @@ E = np.array([
 
 
 """________________________________Reaction matrixes________________________________"""
+
 # Forward reaction matrix
 nu_forward = np.array([
     #   O    H   H2   OH   O2  H2O  HO2 H2O2   O3 OHEX 
@@ -210,6 +219,7 @@ nu = nu_backward - nu_forward
 
 
 """________________________________Three-body reactions________________________________"""
+
 ThirdBodyIndexes = np.array([   8,  15,  27], dtype=np.int64)
 ThirdBodyCount = 3
 
@@ -228,11 +238,13 @@ alfa = np.array([
 
 
 """________________________________Irreversible reactions________________________________"""
+
 IrreversibleIndexes = np.array([], dtype=np.int64)
 IrreversibleCount = 0
 
 
 """________________________________Pressure-dependent reactions________________________________"""
+
 PressureDependentIndexes = np.array([   8,  15,  27], dtype=np.int64)
 PressureDependentCount = 3
 
@@ -268,6 +280,8 @@ SRI = np.array([
 ], dtype=np.float64)
 
 PlogIndexes = np.array([], dtype=np.int64)
+PlogStart = np.array([   0], dtype=np.int64)
+PlogStop = np.array([   1], dtype=np.int64)
 PlogCount = 0
 
 # PLOG parameters

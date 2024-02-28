@@ -10,6 +10,7 @@ model = 'chem_Otomo2018'
 import numpy as np
 
 """________________________________Physical constants________________________________"""
+
 c_L            = 1483.0                   # Liquid sound speed at 30 °C [m/s]
 rho_L          = 998.2                    # Liquid density [kg/m^3]
 sigma          = 0.07197                  # Surface tension [N/m]
@@ -30,6 +31,7 @@ absolute_zero  = 273.15                   # Zero °C in Kelvin
 
 
 """________________________________Species________________________________"""
+
 elements = np.array(['O','H','N','HE','AR'])
 species = np.array([
           'NO',     'NH3',      'H2',      'O2',       'H',       'O',      'OH',     'HO2',     'H2O',    'H2O2',
@@ -37,6 +39,7 @@ species = np.array([
         'HONO',    'HNO2',     'NO3',   'HONO2',     'N2O',    'N2H4',    'N2H3',    'N2H2',    'H2NN',      'AR',
           'HE',      'N2'
 ])
+
 # molar mass [g/mol]
 W = np.array([      
        30.0061,  17.03061,   2.01594,   31.9988,   1.00797,   15.9994,  17.00737,  33.00677,  18.01534,  34.01474,
@@ -44,6 +47,7 @@ W = np.array([
       47.01347,  47.01347,   62.0049,  63.01287,   44.0128,  32.04528,  31.03731,  30.02934,  30.02934,    39.948,
         4.0026,   28.0134
 ], dtype=np.float64)
+
 # thermal conductivity [W / m / K]
 lambdas = np.array([
            0.0,   0.00244,    0.1805,   0.02658,       0.0,       0.0,       0.0,       0.0,     0.016,    0.5863,
@@ -51,17 +55,20 @@ lambdas = np.array([
            0.0,       0.0,       0.0,       0.0,       0.0,       0.0,       0.0,       0.0,       0.0,    0.0177,
          0.151,   0.02583
 ], dtype=np.float64)
+
 index = dict(
         NO= 0,    NH3= 1,     H2= 2,     O2= 3,      H= 4,      O= 5,     OH= 6,    HO2= 7,    H2O= 8,   H2O2= 9,
        NH2=10,     NH=11,      N=12,    NNH=13,  NH2OH=14,   H2NO=15,   HNOH=16,    HNO=17,    HON=18,    NO2=19,
       HONO=20,   HNO2=21,    NO3=22,  HONO2=23,    N2O=24,   N2H4=25,   N2H3=26,   N2H2=27,   H2NN=28,     AR=29,
         HE=30,     N2=31
 )
+
 indexOfWater = 8
 K = 32   # Number of species
 
 
 """________________________________NASA polynomials________________________________"""
+
 N = 5    # degree of polynomials
 TempRange = np.array([
     #   T_low   T_high    T_mid 
@@ -175,6 +182,7 @@ a_high = np.array([
 
 
 """________________________________Reaction constants________________________________"""
+
 I = 213    # Number of reactions
 # Pre-exponential factors [cm^3/mol/s v 1/s]
 A = np.array([
@@ -319,6 +327,7 @@ E = np.array([
 
 
 """________________________________Reaction matrixes________________________________"""
+
 # Forward reaction matrix
 nu_forward = np.array([
     #  NO  NH3   H2   O2    H    O   OH  HO2  H2O H2O2  NH2   NH    N  NNH NH2OH H2NO HNOH  HNO  HON  NO2 HONO HNO2  NO3 HONO2  N2O N2H4 N2H3 N2H2 H2NN   AR   HE   N2 
@@ -759,6 +768,7 @@ nu = nu_backward - nu_forward
 
 
 """________________________________Three-body reactions________________________________"""
+
 ThirdBodyIndexes = np.array([   6,   8,   9,  10,  12,  21,  27,  80,  93,  94,  95, 105, 116, 124, 125, 133, 142, 146, 152, 157, 172, 211, 212], dtype=np.int64)
 ThirdBodyCount = 23
 
@@ -792,11 +802,13 @@ alfa = np.array([
 
 
 """________________________________Irreversible reactions________________________________"""
+
 IrreversibleIndexes = np.array([ 182, 206, 207], dtype=np.int64)
 IrreversibleCount = 3
 
 
 """________________________________Pressure-dependent reactions________________________________"""
+
 PressureDependentIndexes = np.array([  12,  21,  80, 116, 124, 133, 142, 146, 152, 157, 172], dtype=np.int64)
 PressureDependentCount = 11
 
@@ -847,6 +859,8 @@ SRI = np.array([
 ], dtype=np.float64)
 
 PlogIndexes = np.array([ 178, 191, 199, 200], dtype=np.int64)
+PlogStart = np.array([   0,   3,   6,   9], dtype=np.int64)
+PlogStop = np.array([   3,   6,   9,  12], dtype=np.int64)
 PlogCount = 4
 
 # PLOG parameters
