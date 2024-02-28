@@ -396,16 +396,17 @@ def _forward_rate(T, M_eff, M, p):
 
 # PLOG reactions
     for j, i in enumerate(par.PlogIndexes):
-        if p < par.Plog[3*j+1][0]:
-            k_1 = par.Plog[3*j][1] * T ** par.Plog[3*j][2] * np.exp(-par.Plog[3*j][3] / (par.R_cal * T))
-            k_2 = par.Plog[3*j+1][1] * T ** par.Plog[3*j+1][2] * np.exp(-par.Plog[3*j+1][3] / (par.R_cal * T))
-            ln_k = np.log(k_1) + (np.log(p) - np.log(par.Plog[3*j][0])) / (np.log(par.Plog[3*j+1][0]) - np.log(par.Plog[3*j][0])) * (np.log(k_2) - np.log(k_1))
-            k_forward[i] = np.exp(ln_k)
-        else:
-            k_2 = par.Plog[3*j+1][1] * T ** par.Plog[3*j+1][2] * np.exp(-par.Plog[3*j+1][3] / (par.R_cal * T))
-            k_3 = par.Plog[3*j+2][1] * T ** par.Plog[3*j+2][2] * np.exp(-par.Plog[3*j+2][3] / (par.R_cal * T))
-            ln_k = np.log(k_2) + (np.log(p) - np.log(par.Plog[3*j+1][0])) / (np.log(par.Plog[3*j+2][0]) - np.log(par.Plog[3*j+1][0])) * (np.log(k_3) - np.log(k_2))
-            k_forward[i] = np.exp(ln_k)
+        # determne indexes of the lower and upper pressures
+        lower = par.PlogStart[j]
+        for k in range(par.PlogStart[j]+1, par.PlogStop[j]-1):  # smallest and largest pressure skipped
+            if par.Plog[k][0] < p:
+                lower = k
+        upper = lower + 1
+
+        k_lower = par.Plog[lower][1] * T ** par.Plog[lower][2] * np.exp(-par.Plog[lower][3] / (par.R_cal * T))
+        k_upper = par.Plog[upper][1] * T ** par.Plog[upper][2] * np.exp(-par.Plog[upper][3] / (par.R_cal * T))
+        ln_k = np.log(k_lower) + (np.log(p) - np.log(par.Plog[lower][0])) / (np.log(par.Plog[upper][0]) - np.log(par.Plog[lower][0])) * (np.log(k_upper) - np.log(k_lower))
+        k_forward[i] = np.exp(ln_k)
             
     return k_forward
 

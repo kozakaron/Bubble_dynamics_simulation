@@ -416,13 +416,14 @@ def _get_reactions(lines, species):
                 if not isPLOG:
                     PlogIndexes.append(numbers[-1])
                     isPLOG = True
+                    Plog.append([])
                 line = line.replace('PLOG', '')
                 line = line.replace('MX', '')
                 line = line.replace('SP', '')
                 line = line.replace('/', '')
                 line =  _separate(line, ' ')
             
-                Plog.append([float(line[-4]), float(line[-3]), float(line[-2]), float(line[-1])])
+                Plog[-1].append([float(line[-4]), float(line[-3]), float(line[-2]), float(line[-1])])
             elif '/' in line:
                 line = line.replace('/ ', ' ')
                 line = line.replace('/', ' ')
@@ -459,8 +460,6 @@ def _get_reactions(lines, species):
             if not isManualThirdBodyCoefficients:
                 alfa_line = np.ones((len(species)), dtype=np.float64)
                 alfa.append(alfa_line)
-        if isPLOG and len(Plog) % 3 != 0:
-            print(colored(f'Warning, only 3 lines of PLOG is supported in reaction \'{reactions[-1]}\'', 'yellow'))
 
     for i in LindemannIndexes:
         if i not in PressureDependentIndexes:
@@ -475,16 +474,13 @@ def _get_reactions(lines, species):
         if not (i in LindemannIndexes or i in TroeIndexes or i in SRIIndexes):
             print(colored(f'Error, reaction {i} (\'{reactions[i]}\') is in PressureDependentIndexes but not in LindemannIndexes or TroeIndexes or SRIIndexes', 'red'))
 
-    try:
-        if len(Plog) == 0:
-            Plog.append([])
-        Plog = np.array(Plog)
-    except:
-        Plog = np.array([[]])
+    for i in range(len(Plog)):
+        Plog[i] = np.array(Plog[i], dtype=np.float64)
 
     if ReacConst == []: ReacConst = [[]]
     if Troe == []: Troe = [[]]
     if SRI == []: SRI = [[]]
+    if Plog == []: Plog = [[[]]]
 
     A = np.array(A)
     B = np.array(B)
@@ -493,13 +489,16 @@ def _get_reactions(lines, species):
     
   # Correct units
     i = _find('REAC', lines)
-    if len(PlogIndexes) != 0: Plog[:, 0] *= 1.0e5   # convert bar to Pa
+    if len(PlogIndexes) != 0:
+        for j in range(len(Plog)):
+            Plog[j][:, 0] *= 1.0e5   # convert bar to Pa
     if 'MOLEC' in lines[i]: # MOLECULE
         print(colored(f'Note, pre-exponential factor is modified from units of [cm^3/molecule/s] to [cm^3/mol/s]', 'blue'))
         A /= 6.02214e23
         if len(PressureDependentIndexes) != 0: ReacConst[:, 0] /= 6.02214e23
         if len(PlogIndexes) != 0:
-            Plog[:, 1]  /= 6.02214e23
+            for j in range(len(Plog)):
+                Plog[j][:, 1]  /= 6.02214e23
         # Avogadro's number: N_A = 6.02214e23 [-]
     elif 'MOL' in lines[i]:
         print(colored(f'Note, pre-exponential factor is modified from units of [cm^3/mol/s] to [cm^3/mol/s]', 'blue'))
@@ -509,36 +508,41 @@ def _get_reactions(lines, species):
         print(colored(f'Note, activation energy (E_i) is modified from units of [kcal/mol] to [cal/mol]', 'blue'))
         E /= 1000.0 # [kcal/mol -> cal/mol]
         if len(PressureDependentIndexes) != 0: ReacConst[:, 2] /= 1000.0
-        if len(PlogIndexes) != 0: 
-            Plog[:, 3]  /= 1000.0
+        if len(PlogIndexes) != 0:
+            for j in range(len(Plog)): 
+                Plog[j][:, 3]  /= 1000.0
     elif 'JOU' in lines[i]:
         print(colored(f'Note, activation energy (E_i) is modified from units of [J/mol] to [cal/mol]', 'blue'))
         E /= 4.184 # [J/mol -> cal/mol]
         if len(PressureDependentIndexes) != 0: ReacConst[:, 2] /= 4.184
-        if len(PlogIndexes) != 0: 
-            Plog[:, 3]  /= 4.184
+        if len(PlogIndexes) != 0:
+            for j in range(len(Plog)):
+                Plog[j][:, 3]  /= 4.184
     elif 'KJOU' in lines[i]:
         print(colored(f'Note, activation energy (E_i) is modified from units of [kJ/mol] to [cal/mol]', 'blue'))
         E *= 1000.0 # [kJ/mol -> J/mol]
         E /= 4.184 # [J/mol -> cal/mol]
         if len(PressureDependentIndexes) != 0: ReacConst[:, 2] *= 1000.0 / 4.184
-        if len(PlogIndexes) != 0: 
-            Plog[:, 3]  *= 1000.0 / 4.184
+        if len(PlogIndexes) != 0:
+            for j in range(len(Plog)):
+                Plog[j][:, 3]  *= 1000.0 / 4.184
     elif 'KELV' in lines[i]:
         print(colored(f'Note, activation energy (E_i) is modified from units of [K] to [cal/mol]', 'blue'))
         E *= 1.9872 # [K -> cal/mol]
         if len(PressureDependentIndexes) != 0: ReacConst[:, 2] *= 1.9872
-        if len(PlogIndexes) != 0: 
-            Plog[:, 3]  *= 1.9872
+        if len(PlogIndexes) != 0:
+            for j in range(len(Plog)):
+                Plog[j][:, 3]  *= 1.9872
         # Universal gas constant: impal = 1.987 [cal/mol/K]
     elif 'EVOL' in lines[i]:
         print(colored(f'Note, activation energy (E_i) is modified from units of [eV/mol] to [cal/mol]', 'blue'))
         E *= 1.602176634e-19 # [eV/mol -> J/mol]
         E /= 4.184 # [J/mol -> cal/mol]
         if len(PressureDependentIndexes) != 0: ReacConst[:, 2] *= 1.602176634e-19 / 4.184
-        if len(PlogIndexes) != 0: 
-            Plog[:, 3]  *= 1.602176634e-19 / 4.184
-
+        if len(PlogIndexes) != 0:
+            for j in range(len(Plog)):
+                Plog[j][:, 3]  *= 1.602176634e-19 / 4.184
+    
     for i in range(len(E)):
         E[i] = round(E[i], 5)
     
@@ -639,7 +643,7 @@ def extract(path):
     
   # Create parameters.py
     line_start = '\n\"\"\"________________________________'
-    line_end = '________________________________\"\"\"\n'
+    line_end = '________________________________\"\"\"\n\n'
     text = ''
     
     # Physical constants, Elements and Species data
@@ -660,11 +664,11 @@ def extract(path):
         max_len = 0
     else:
         max_len = 10
-    text += f'species = np.array({print_array(species, 10, max_len=max_len)})\n'
+    text += f'species = np.array({print_array(species, 10, max_len=max_len)})\n\n'
     text += f'# molar mass [g/mol]\n'
-    text += f'W = np.array([      {print_array(W, 10, max_len=max_len)[1:]}, dtype=np.float64)\n'
+    text += f'W = np.array([      {print_array(W, 10, max_len=max_len)[1:]}, dtype=np.float64)\n\n'
     text += f'# thermal conductivity [W / m / K]\n'
-    text += f'lambdas = np.array({print_array(lambdas, 10, max_len=max_len)}, dtype=np.float64)\n'
+    text += f'lambdas = np.array({print_array(lambdas, 10, max_len=max_len)}, dtype=np.float64)\n\n'
     text += f'index = dict(\n\t'
     for i, specie in enumerate(species):
         text += f'{specie: >6}={i: >2}'
@@ -672,7 +676,7 @@ def extract(path):
             text += ',\n\t'
         elif i != len(species)-1:
             text += ', '
-    text += '\n)\n'
+    text += '\n)\n\n'
     text += f'indexOfWater = ' + ( '-1' if not 'H2O' in species else str(species.index('H2O')) ) + '\n'
     text += f'K = {len(W)}   # Number of species\n\n'
     
@@ -734,12 +738,23 @@ def extract(path):
     text += f'# SRI parameters\n'
     text += f'SRI = np.array('+ print_array(SRI, 18, [f'{x:>2}. {reactions[x]}' for x in SRIIndexes], ['a',  'b',  'c',  'd', 'e']) + ', dtype=np.float64)\n\n'
     
+    PlogStart = []
+    PlogStop = []
+    PlogFlattened = []
+    for i in range(len(Plog)):
+        PlogStart.append(PlogStop[-1] if i != 0 else 0)
+        PlogStop.append(PlogStart[-1] + len(Plog[i]))
+        for PlogLine in Plog[i]:
+            PlogFlattened.append(PlogLine)
+    PlogFlattened = np.array(PlogFlattened, dtype=np.float64)
     text += f'PlogIndexes = np.array({print_array(PlogIndexes, 4)}, dtype=np.int64)\n'
+    text += f'PlogStart = np.array({print_array(PlogStart, 4)}, dtype=np.int64)\n'
+    text += f'PlogStop = np.array({print_array(PlogStop, 4)}, dtype=np.int64)\n'
     text += f'PlogCount = {len(PlogIndexes)}\n\n'
     text += f'# PLOG parameters\n'
     PlogComments = [f'{x:>2}. {reactions[x]}' for x in PlogIndexes]
-    PlogComments = sum([[x, '', ''] for x in PlogComments], []) # insert 2 empty lines after each comment
-    text += f'Plog = np.array(' + print_array(Plog, 18, PlogComments, ['P_1',  'A_1',  'b_1',  'E_1']) + ', dtype=np.float64)\n\n'
+    PlogComments = sum([[comment] + (len(Plog[i])-1) * [''] for i, comment in enumerate(PlogComments)], [])
+    text += f'Plog = np.array(' + print_array(PlogFlattened, 18, PlogComments, ['P_1',  'A_1',  'b_1',  'E_1']) + ', dtype=np.float64)\n\n'
     
     text = text.replace('\t', '    ')
     file = open('parameters.py', 'w', encoding='utf8')
