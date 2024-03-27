@@ -33,7 +33,7 @@ excitation_type = 'sin_impulse' # function to calculate pressure excitation (see
 
 """________________________________Libraries________________________________"""
 
-from termcolor import colored
+from termcolor import colored   # colored error messages
 import matplotlib.pyplot as plt   # for plotting
 import numpy as np   # matrices, math
 from scipy.integrate import solve_ivp   # differential equation solver
@@ -48,21 +48,31 @@ from func_timeout import func_timeout, FunctionTimedOut   # for timeout
 import os    # file management
 import importlib   # for reloading your own files
 
-# my own files:
+# import parameters.py as par:
 try:
     import parameters as par   # numeric constants and coefficents
     importlib.reload(par)   # reload changes you made
-except:
+except Exception as _error:
     print(print(colored('Error, \'parameters.py\' not found','red')))
+    raise _error
+
+# import excitation.py as excitation:
 try:
     import excitation
     importlib.reload(excitation)
-except:
+except ImportError as _error:
     try:
-        import Bubble_dynamics_simulation.excitation as excitation
+        from  Bubble_dynamics_simulation import excitation
         importlib.reload(excitation)
-    except:
-        print(colored(f'Error, \'excitation.py\' not found', 'red'))    
+    except ImportError as _error:
+        print(colored(f'Error, \'excitation.py\' not found', 'red'))
+        raise _error
+    except Exception as _error:
+        print(colored(f'Error, \'excitation.py\' failed to load', 'red'))
+        raise _error
+except Exception as _error:
+    print(colored(f'Error, \'excitation.py\' failed to load', 'red'))
+    raise _error
 
 """________________________________General________________________________"""
 
@@ -1154,8 +1164,9 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
                 fig3.savefig(base_name+'_pressure.'+format, format=format, metadata=metadata, bbox_inches='tight')
             if plot_extra:
                 fig4.savefig(base_name+'_extra.'+format, format=format, metadata=metadata, bbox_inches='tight')
-        except:
+        except Exception as error:
             print(print(colored(f'Error in saving {base_name}_1.png','red')))
+            print(error)
 
 # print data
     print_data(cpar, data)

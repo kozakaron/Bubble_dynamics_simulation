@@ -7,17 +7,26 @@ Recommended usage:
 
 """________________________________Libraries________________________________"""
 
-import numpy as np
-import os
-from termcolor import colored
+import numpy as np   # matrices, math
+import os    # file management
+from termcolor import colored   # colored error messages
+import importlib   # for reloading your own files
+
+# import data.py as data
 try:
     import data
-except:
+except ImportError:
     try:
         import Bubble_dynamics_simulation.data as data
-    except:
+    except ImportError as _error:
         print(colored(f'Error, \'data.py\' not found', 'red'))
-import importlib
+        raise _error
+    except Exception as _error:
+        print(colored(f'Error, \'data.py\' failed to load', 'red'))
+        raise _error
+except Exception as _error:
+    print(colored(f'Error, \'data.py\' failed to load', 'red'))
+    raise _error
 importlib.reload(data)
 
 comment = '!'

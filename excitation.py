@@ -6,12 +6,12 @@ Use getExcitation(excitation_type) to get the excitation function and its argume
 Use plotExcitation(excitation_type) to plot the excitation function. 
 """
 
-import numpy as np
-from termcolor import colored
+import numpy as np   # matrices, math
+from termcolor import colored   # colored error messages
 from numba import njit   # Just In Time compiler
 from numba.types import Tuple, float64   # JIT types
-from matplotlib import pyplot as plt
-import os
+from matplotlib import pyplot as plt   # for plotting
+import os    # file management
 
 def getExcitation(excitation_type='no_excitation'):
     """
