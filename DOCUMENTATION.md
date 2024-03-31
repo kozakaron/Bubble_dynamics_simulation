@@ -3,7 +3,7 @@
 
 This document is automatically generated from in code documentation. (multiline comments under function headers) 
 
-Date of generation: 2024.02.06 15:50:10 (YYYY.MM.DD HH:MM:SS) 
+Date of generation: 2024.03.31 21:02:49 (YYYY.MM.DD HH:MM:SS) 
 ## Table of contents
 
 0. [**inp_data_extractor.py**](#bookmark_inp_data_extractor)
@@ -286,6 +286,17 @@ External dependencies:
 	Legacy function, use viscosity(T) instead
 	~~~
 
+* **check_cpar**
+
+	~~~Python
+	def check_cpar(cpar)
+	~~~
+
+	~~~
+	Checks the existence, type, and value of each required cpar keys according to cpar_rules. Prints colored error messages.
+	Returns True if cpar is correct, False otherwise. Input: cpar - dict or dotdict of control parameters.
+	~~~
+
 * **copy**
 
 	~~~Python
@@ -466,6 +477,7 @@ External dependencies:
 ### Global variables
 
 Actual values might differ
+ * **cpar_rules**: *dict* = `{'ID': {'default': 0, 'type': <class 'int'>, 'range': [0, 1000000000000000], 'co...`
  * **enable_dissipated_energy**: *bool* = `True`
  * **enable_evaporation**: *bool* = `False`
  * **enable_heat_transfer**: *bool* = `True`

@@ -138,8 +138,8 @@ cpar_rules = dict(
     surfactant = dict(default=1.0,                    type=float,         range=[0.0, 1000.0],            comment='surfactant (surface tension modfier) [-]'),
 )
 # Excitation parameters:
-for arg, unit, default in zip(excitation_args, excitation_units, excitation_defaults):
-    cpar_rules[arg] = dict(default=default,           type=float,         range=[-1e30, 1e30],            comment=f'[{unit}]')
+for _arg, _unit, _default in zip(excitation_args, excitation_units, excitation_defaults):
+    cpar_rules[_arg] = dict(default=_default,           type=float,         range=[-1e30, 1e30],            comment=f'[{_unit}]')
 
 def check_cpar(cpar):
     """Checks the existence, type, and value of each required cpar keys according to cpar_rules. Prints colored error messages.
