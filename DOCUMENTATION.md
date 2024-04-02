@@ -3,7 +3,7 @@
 
 This document is automatically generated from in code documentation. (multiline comments under function headers) 
 
-Date of generation: 2024.03.31 21:02:49 (YYYY.MM.DD HH:MM:SS) 
+Date of generation: 2024.04.02 19:21:16 (YYYY.MM.DD HH:MM:SS) 
 ## Table of contents
 
 0. [**inp_data_extractor.py**](#bookmark_inp_data_extractor)
@@ -180,6 +180,7 @@ External dependencies:
  * psutil
  * socket
  * time
+ * traceback
 
 ### Classes
 
@@ -434,7 +435,7 @@ External dependencies:
 * **solve**
 
 	~~~Python
-	def solve(cpar, t_int=[0. 1.], LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0)
+	def solve(cpar, t_int=[0. 1.], LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0, print_errors=False)
 	~~~
 
 	~~~
@@ -446,6 +447,8 @@ External dependencies:
 	 * Radau_timeout: timeout for Radau solver in seconds
 	 * extra_dims: add extra dimensions to the initial condition array (initial value: 0.0) | 
 	               use it to plot extra variables (e.g. energy) during the simulation
+	 * print_errors: if True, LSODA and Radau errors will be printed during fatal failiures. | 
+	                 disable JIT to see the exact line the error occured
 	
 	Returns:
 	 * num_sol: numerical solution. Use num_sol.t and num_sol.y to get the time and the solution. Can be None

@@ -47,6 +47,7 @@ from numba.types import Tuple, unicode_type, float64, float32, int64, int32   # 
 from func_timeout import func_timeout, FunctionTimedOut   # for timeout
 import os    # file management
 import importlib   # for reloading your own files
+import traceback   # for error handling
 
 # import parameters.py as par:
 try:
@@ -599,7 +600,7 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args, e
 
 """________________________________Solving________________________________"""
 
-def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0):
+def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0, print_errors=False):
     """
     This funfction solves the differential equation, and returns the numerical solution.
     Parameters:
@@ -609,6 +610,8 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
      * Radau_timeout: timeout for Radau solver in seconds
      * extra_dims: add extra dimensions to the initial condition array (initial value: 0.0) | 
                    use it to plot extra variables (e.g. energy) during the simulation
+     * print_errors: if True, LSODA and Radau errors will be printed during fatal failiures. | 
+                     disable JIT to see the exact line the error occured
 
     Returns:
      * num_sol: numerical solution. Use num_sol.t and num_sol.y to get the time and the solution. Can be None
@@ -649,8 +652,11 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
             error_code += 1
     except FunctionTimedOut:
         error_code += 2
-    except:
+    except Exception as error:
         error_code += 3
+        if print_errors:
+            print(colored(f'Error is solve(): LSODE had a fatal error:', 'red'))
+            print(''.join(traceback.format_exception(error, limit=5)))
     if error_code % 10 != 0:
         try: # try-catch block
             num_sol = func_timeout( # timeout block
@@ -662,8 +668,11 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
                 error_code += 40
         except FunctionTimedOut:
             error_code += 50
-        except:
+        except Exception as error:
             error_code += 60
+            if print_errors:
+                print(colored(f'Error is solve(): Radau had a fatal error:', 'red'))
+                print(''.join(traceback.format_exception(error, limit=5)))
     
     end = time.time()
     elapsed_time = (end - start)
@@ -973,7 +982,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
     if type(cpar) == dict:
         cpar = dotdict(cpar)
 
-    num_sol, error_code, elapsed_time = solve(cpar, t_int, LSODA_timeout, Radau_timeout, extra_dims)
+    num_sol, error_code, elapsed_time = solve(cpar, t_int, LSODA_timeout, Radau_timeout, extra_dims, print_errors=True)
     data = get_data(cpar, num_sol, error_code, elapsed_time)
     
 # Print errors
@@ -983,7 +992,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
         return None
     
 # Calculations
-    if t_int[1] != 1.0: 
+    if t_int[1] != 1.0 or not success: 
         end_index = -1
     else:
         end_index = np.where(num_sol.t > n * data.collapse_time)[0][0]
