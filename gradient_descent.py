@@ -13,15 +13,22 @@ import random   # random number generator
 import importlib   # reload changes you made
 from termcolor import colored   # colored error messages
 
-# my own file:
+# import full_bubble_model.py as de:
 _already_imported = 'de' in globals()
 try:
     import full_bubble_model as de
-except:
+except ImportError:
     try:
-        import Bubble_dynamics_simulation.full_bubble_model as de
-    except:
+        from  Bubble_dynamics_simulation import full_bubble_model as de
+    except ImportError as _error:
         print(colored(f'Error, \'full_bubble_model.py\' not found', 'red'))
+        raise _error
+    except Exception as _error:
+        print(colored(f'Error, \'full_bubble_model.py\' failed to load', 'red'))
+        raise _error
+except Exception as _error:
+    print(colored(f'Error, \'full_bubble_model.py\' failed to load', 'red'))
+    raise _error
 if _already_imported: importlib.reload(de)   # reload changes you made
 
 

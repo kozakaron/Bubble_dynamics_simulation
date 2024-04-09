@@ -33,7 +33,7 @@ excitation_type = 'sin_impulse' # function to calculate pressure excitation (see
 
 """________________________________Libraries________________________________"""
 
-from termcolor import colored
+from termcolor import colored   # colored error messages
 import matplotlib.pyplot as plt   # for plotting
 import numpy as np   # matrices, math
 from scipy.integrate import solve_ivp   # differential equation solver
@@ -47,22 +47,34 @@ from numba.types import Tuple, unicode_type, float64, float32, int64, int32   # 
 from func_timeout import func_timeout, FunctionTimedOut   # for timeout
 import os    # file management
 import importlib   # for reloading your own files
+import traceback   # for error handling
 
-# my own files:
+# import parameters.py as par:
 try:
     import parameters as par   # numeric constants and coefficents
     importlib.reload(par)   # reload changes you made
-except:
+except Exception as _error:
     print(print(colored('Error, \'parameters.py\' not found','red')))
+    raise _error
+
+# import excitation.py as excitation:
 try:
     import excitation
     importlib.reload(excitation)
-except:
+except ImportError as _error:
     try:
-        import Bubble_dynamics_simulation.excitation as excitation
+        from  Bubble_dynamics_simulation import excitation
         importlib.reload(excitation)
-    except:
-        print(colored(f'Error, \'excitation.py\' not found', 'red'))    
+    except ImportError as _error:
+        print(colored(f'Error, \'excitation.py\' not found', 'red'))
+        raise _error
+    except Exception as _error:
+        print(colored(f'Error, \'excitation.py\' failed to load', 'red'))
+        raise _error
+except Exception as _error:
+    print(colored(f'Error, \'excitation.py\' failed to load', 'red'))
+    raise _error
+
 
 """________________________________General________________________________"""
 
@@ -88,7 +100,8 @@ def copy(input):
     else:
         return input
 
-"""________________________________Before the simulation________________________________"""
+
+"""________________________________Load excitation________________________________"""
 
 def _colorTF(boolean):
     """Input: boolean. Colors it red if False, green if True. Returns the colored string."""
@@ -103,6 +116,84 @@ print(f'excitation: {excitation_type} (control parameters: {excitation_args})')
 print(f'enable heat transfer: {_colorTF(enable_heat_transfer)}\tenable evaporation: {_colorTF(enable_evaporation)}\tenable reactions: {_colorTF(enable_reactions)}\tenable dissipated energy: {_colorTF(enable_dissipated_energy)}')
 if target_specie not in par.species:
     print(colored(f'Error, target specie \'{target_specie}\' not found in parameters.py', 'red'))
+
+
+"""________________________________Control parameters________________________________"""
+
+cpar_rules = dict(
+    ID =         dict(default=0,                      type=int,           range=[0, 10**15],              comment='ID of control parameter (not used during calculation)'),
+# Initial conditions:
+    R_E =        dict(default=10.0e-6,                type=float,         range=[1e-9, 1e-2],             comment='bubble equilibrium radius [m]'),
+    ratio =      dict(default=1.0,                    type=float,         range=[1.0, 1000.0],            comment='initial radius / equilibrium radius R_0/R_E [-]'),
+    gases =      dict(default=[0],                    type=(list, int),   range=[0, par.K-1],             comment='indexes of species in initial bubble (list of species indexes)'),
+    fractions =  dict(default=[1.0],                  type=(list, float), range=[0.0, 1.0],               comment='molar fractions of species in initial bubble (list of fractions for every gas)'),
+# Ambient parameters:
+    P_amb =      dict(default=1.0*par.atm2Pa,         type=float,         range=[0.0, 1000.0*par.atm2Pa], comment='ambient pressure [Pa]'),
+    T_inf =      dict(default=20.0+par.absolute_zero, type=float,         range=[0.0, 100000.0],          comment='ambient temperature [K]'),
+# Liquid parameters:
+    alfa_M =     dict(default=par.alfa_M,             type=float,         range=[0.0, 10.0],              comment='water accommodation coefficient [-]'),
+    P_v =        dict(default=par.P_v,                type=float,         range=[0.0, 1e8],               comment='vapour pressure [Pa]'),
+    mu_L =       dict(default=par.mu_L,               type=float,         range=[0.0, 10000.0],           comment='dynamic viscosity [Pa*s]'),
+    rho_L =      dict(default=par.rho_L,              type=float,         range=[0.0, 100000.0],          comment='density [kg/m^3]'),
+    c_L =        dict(default=par.c_L,                type=float,         range=[0.0, 100000.0],          comment='sound speed [m/s]'),
+    surfactant = dict(default=1.0,                    type=float,         range=[0.0, 1000.0],            comment='surfactant (surface tension modfier) [-]'),
+)
+# Excitation parameters:
+for _arg, _unit, _default in zip(excitation_args, excitation_units, excitation_defaults):
+    cpar_rules[_arg] = dict(default=_default,           type=float,         range=[-1e30, 1e30],            comment=f'[{_unit}]')
+
+def check_cpar(cpar):
+    """Checks the existence, type, and value of each required cpar keys according to cpar_rules. Prints colored error messages.
+    Returns True if cpar is correct, False otherwise. Input: cpar - dict or dotdict of control parameters."""
+
+    for key, rule in cpar_rules.items():
+        if key not in cpar: # check existence
+            if key == 'ID':
+                cpar[key] = rule['default']
+                continue
+            print(colored(f'Error in cpar, key \'{key}\' not found. ', 'red'))
+            return False
+
+        if type(rule['type']) == type:
+            if type(cpar[key]) != rule['type']: # check type
+                try:
+                    cpar[key] = rule['type'](cpar[key])
+                except:
+                    print(colored(f'Error in cpar, key \'{key}\' has wrong type. Expected {rule["type"].__name__}, recieved {type(cpar[key]).__name__}: cpar.{key} = {cpar[key]}', 'red'))
+                    return False
+            if cpar[key] < rule['range'][0] or rule['range'][1] < cpar[key]:    # check range
+                print(colored(f'Error in cpar, key \'{key}\' out of range: cpar.{key} = {cpar[key]} not in {rule["range"]}', 'red'))
+                return False
+        else:
+            list_type, element_type = rule['type']
+            if type(cpar[key]) != list_type:    # check list type
+                try:
+                    cpar[key] = list_type(cpar[key])
+                except:
+                    print(colored(f'Error in cpar, key \'{key}\' has wrong type. Expected {list_type.__name__}, recieved {type(cpar[key]).__name__}: cpar.{key} = {cpar[key]}', 'red'))
+                    return False
+            if len(cpar[key]) == 0:   # check list length
+                print(colored(f'Error in cpar, key \'{key}\' is empty: cpar.{key} = {cpar[key]}', 'red'))
+                return False
+            for i, element in enumerate(cpar[key]):
+                if type(element) != element_type:   # check element type
+                    try:
+                        cpar[key][i] = element_type(element)
+                    except:
+                        print(colored(f'Error in cpar, key \'{key}\' has wrong type. Expected list of {element_type.__name__}, recieved list of {type(element).__name__}: cpar.{key} = {cpar[key]}', 'red'))
+                        return False
+                if cpar[key][i] < rule['range'][0] or rule['range'][1] < cpar[key][i]:    # check element range
+                    print(colored(f'Error in cpar, key \'{key}\' out of range: cpar.{key} = {cpar[key]} not in {rule["range"]}', 'red'))
+                    return False
+    
+    if round(sum(cpar['fractions']), 5) != 1.0:
+        print(print(colored(f'Error in cpar, sum of cpar.fractions is not 1: {cpar["fractions"]}', 'red')))
+        return False
+    if len(cpar['gases']) != len(cpar['fractions']):
+        print(print(colored(f'Error in cpar, len(cpar.gases) != len(cpar.fractions): {cpar["gases"]} != {cpar["fractions"]}', 'red')))
+        return False
+    
+    return True
     
 def example_cpar(normal_dict=False):
     """Provides an example of the control parameter dictionary. Use print_cpar() to print it. Parameters:
@@ -111,27 +202,8 @@ def example_cpar(normal_dict=False):
     Returns:
     * cpar: control parameter dictionary"""
     
-    cpar = dict(
-        ID = 0,                            # ID of control parameter (not used during calculation)
-    # Initial conditions:
-        R_E = 10.0e-6,                     # bubble equilibrium radius [m]
-        ratio = 1.0,                       # initial radius / equilibrium radius R_0/R_E [-]
-        gases = [0],                       # indexes of species in initial bubble (list of species indexes)
-        fractions = [1.0],                 # molar fractions of species in initial bubble (list of fractions for every gas)
-    # Ambient parameters:
-        P_amb = 1.0 * par.atm2Pa,          # ambient pressure [Pa]
-        T_inf = 20.0 + par.absolute_zero,  # ambient temperature [K]
-    # Liquid parameters:
-        alfa_M = par.alfa_M,               # water accommodation coefficient [-]
-        P_v = par.P_v,                     # vapour pressure [Pa]
-        mu_L = par.mu_L,                   # dynamic viscosity [Pa*s]
-        rho_L = par.rho_L,                 # density [kg/m^3]
-        c_L = par.c_L,                     # sound speed [m/s]
-        surfactant = 1.00,                 # surfactant (surface tension modfier) [-]
-    )
+    cpar = {key: rule['default'] for key, rule in cpar_rules.items()}
 
-    for arg, default in zip(excitation_args, excitation_defaults):
-        cpar[arg] = float(default)
     if target_specie == 'NH3':
         cpar['gases'] = [par.index['H2'], par.index['N2']]
         cpar['fractions'] = [0.75, 0.25]
@@ -166,9 +238,11 @@ def Viscosity(T):
     return viscosity(T)
 
 
+"""________________________________Preprocessing________________________________"""
+
 def _initial_condition(cpar, evaporation=False, extra_dims=0):
     """Calculates the initial condition of the bubble from the control parameters. Arguments:
-     * cpar: control parameters
+     * cpar: control parameters, dotdict
      * evaporation: if True, water vapour will be present in the initial bubble (the water's partial pressure equals to the saturated water pressure)
      * extra_dims: add extra dimensions to the initial condition array (initial value: 0.0) | 
                    use it to plot extra variables (e.g. energy) during the simulation
@@ -179,25 +253,6 @@ def _initial_condition(cpar, evaporation=False, extra_dims=0):
      * lowpressure_warning: if True, the pressure during the expansion is lower, than the saturated water pressure
     """
 
-    if type(cpar) == dict:
-        cpar = dotdict(cpar)
-
-    if not 'P_v' in cpar:
-        cpar.P_v = vapour_pressure(T=cpar.T_inf) # [Pa]
-    if not 'mu_L' in cpar:
-        cpar.mu_L = viscosity(T=cpar.T_inf) # [Pa]
-    if not 'rho_L' in cpar:
-        cpar.rho_L = par.rho_L # [kg/m^3]
-    if not 'c_L' in cpar:
-        cpar.c_L = par.c_L # [m/s]
-    if type(cpar.gases) != list:
-        cpar.gases = [cpar.gases]
-    if type(cpar.fractions) != list:
-        cpar.fractions = [cpar.fractions]
-    if round(sum(cpar.fractions), 5) != 1.0:
-        print(print(colored(f'Warning, in _initial_condition(), sum of cpar.fractions isn\'t 1: {cpar.fractions}','yellow')))
-    if len(cpar.gases) != len(cpar.fractions):
-        print(print(colored(f'Warning, in _initial_condition(), len(cpar.gases) != len(cpar.fractions): {cpar.gases} != {cpar.fractions}','yellow')))
     IC = np.zeros((par.K + 4 + extra_dims), dtype=np.float64)
     R_0 = cpar.ratio * cpar.R_E
     
@@ -207,7 +262,7 @@ def _initial_condition(cpar, evaporation=False, extra_dims=0):
     p_gas = p_E - cpar.P_v if evaporation else p_E
     lowpressure_error = lowpressure_warning = False
     if p_gas < 0.0:
-        #print(colored('Error! The pressure of the gas is negative!', 'red'))
+        #print(colored('Error in _initial_condition(), the pressure of the gas is negative.', 'red'))
         lowpressure_error = True
     n_gas = p_gas * V_E / (par.R_g * cpar.T_inf) # [mol]
     
@@ -220,7 +275,7 @@ def _initial_condition(cpar, evaporation=False, extra_dims=0):
     P_amb_min = cpar.P_v if evaporation else 0.0 # [Pa]
     P_amb_min += p_gas - 2.0 * cpar.surfactant * par.sigma / R_0 # [Pa]
     if P_amb_min < cpar.P_v:
-        #print(colored('Warning! The pressure during the expansion is lower, than the saturated water pressure', 'yellow'))
+        #print(colored('Warning in _initial_condition(), the pressure during the expansion is lower, than the saturated water pressure.', 'yellow'))
         lowpressure_warning = True
 
     # Initial conditions
@@ -239,16 +294,6 @@ def _initial_condition(cpar, evaporation=False, extra_dims=0):
 def _work(cpar, evaporation=False):
     """Calculates expansion work of the bubble, if ratio != 1"""
 
-    if type(cpar) == dict:
-        cpar = dotdict(cpar)
-    if not 'P_v' in cpar:
-        cpar.P_v = vapour_pressure(T=cpar.T_inf) # [Pa]
-    if not 'mu_L' in cpar:
-        cpar.mu_L = viscosity(T=cpar.T_inf) # [Pa]
-    if not 'rho_L' in cpar:
-        cpar.rho_L = par.rho_L # [kg/m^3]
-    if not 'c_L' in cpar:
-        cpar.c_L = par.c_L # [m/s]
     R_0 = cpar.ratio * cpar.R_E # [m]
     V_E = 4.0 / 3.0 * cpar.R_E**3 * np.pi    # [m^3]
     V_0 = 4.0 / 3.0 * R_0**3 * np.pi  # [m^3]
@@ -555,7 +600,7 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args, e
 
 """________________________________Solving________________________________"""
 
-def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0):
+def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0, print_errors=False):
     """
     This funfction solves the differential equation, and returns the numerical solution.
     Parameters:
@@ -565,6 +610,8 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
      * Radau_timeout: timeout for Radau solver in seconds
      * extra_dims: add extra dimensions to the initial condition array (initial value: 0.0) | 
                    use it to plot extra variables (e.g. energy) during the simulation
+     * print_errors: if True, LSODA and Radau errors will be printed during fatal failiures. | 
+                     disable JIT to see the exact line the error occured
 
     Returns:
      * num_sol: numerical solution. Use num_sol.t and num_sol.y to get the time and the solution. Can be None
@@ -577,21 +624,14 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
         
     error_code = 0
     start = time.time()
-    if not 'P_v' in cpar:
-        cpar.P_v = vapour_pressure(T=cpar.T_inf) # [Pa]
-    if not 'mu_L' in cpar:
-        cpar.mu_L = viscosity(T=cpar.T_inf) # [Pa]
-    if not 'rho_L' in cpar:
-        cpar.rho_L = par.rho_L # [kg/m^3]
-    if not 'c_L' in cpar:
-        cpar.c_L = par.c_L # [m/s]
+    num_sol = None
+    if not check_cpar(cpar):
+        error_code += 300
+        return None, error_code, 0.0
+    
     ex_args = []
-    for name, unit in zip(excitation_args, excitation_units):
-        if name in cpar:
-            ex_args.append(cpar[name])
-        else:
-            ex_args.append(0.0)
-            print(colored(f'Warning! Pressure excitation argument \'{name} [{unit}]\' is not in cpar. 0 is used instead. ', 'yellow'))
+    for key in excitation_args:
+        ex_args.append(cpar.get(key, 0.0))
     ex_args = np.array(ex_args, dtype=np.float64)
     IC, lowpressure_error, lowpressure_warning = _initial_condition(cpar, enable_evaporation, extra_dims)
     if lowpressure_error:
@@ -612,8 +652,11 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
             error_code += 1
     except FunctionTimedOut:
         error_code += 2
-    except:
+    except Exception as error:
         error_code += 3
+        if print_errors:
+            print(colored(f'Error is solve(): LSODE had a fatal error:', 'red'))
+            print(''.join(traceback.format_exception(error, limit=5)))
     if error_code % 10 != 0:
         try: # try-catch block
             num_sol = func_timeout( # timeout block
@@ -625,14 +668,15 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
                 error_code += 40
         except FunctionTimedOut:
             error_code += 50
-        except:
+        except Exception as error:
             error_code += 60
+            if print_errors:
+                print(colored(f'Error is solve(): Radau had a fatal error:', 'red'))
+                print(''.join(traceback.format_exception(error, limit=5)))
     
     end = time.time()
     elapsed_time = (end - start)
     
-    if error_code % 100 > 3:
-        return None, error_code, elapsed_time
     return num_sol, error_code, elapsed_time
 
 # error codes description
@@ -647,6 +691,7 @@ error_codes = { # this is also a dictionary
     'x6x': dict(describtion='Radau solver had a fatal error (NO SOLUTION!)', color='red'),
     '1xx': dict(describtion='Low pressure error: The pressure of the gas is negative', color='red'),
     '2xx': dict(describtion='Low pressure warning: The pressure during the expansion is lower, than the saturated water pressure', color='yellow'),
+    '3xx': dict(describtion='Invalid control parameters', color='red'),
 }
 
 def get_errors(error_code, printit=False):
@@ -670,7 +715,7 @@ def get_errors(error_code, printit=False):
         errors.append(third_digit)
 
     # determine if soultion was succesfull
-    success = '1xx' not in errors and ('xx0' in errors or 'x0x' in errors)
+    success = ('1xx' not in errors and '3xx' not in errors) and ('xx0' in errors or 'x0x' in errors)
 
     # print errors
     if printit:
@@ -710,12 +755,8 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
         gases=cpar.gases,
         fractions=cpar.fractions,
     ))
-    for name, unit in zip(excitation_args, excitation_units):
-        if name in cpar:
-            data[name] = cpar[name]
-        else:
-            data[name] = 0.0
-            #print(colored(f'Warning! Pressure excitation argument \'{name} [{unit}]\' is not in cpar. 0 is used instead. ', 'yellow'))
+    for key in excitation_args:
+        data[key] = cpar.get(key, 0.0)
     
     # runtime and error
     data.error_code = error_code
@@ -741,7 +782,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.target_specie = target_specie
     errors, success = get_errors(error_code)
     data.success = success
-    if not success:
+    if num_sol is None:
         return data
     
     # normal functioning
@@ -788,10 +829,10 @@ def _print_line(name, value, comment, print_it=False):
     elif type(value) == float:
         if abs(value) < 1e-12:
             text += f'0.0,'
-        elif abs(value) < 1e-6:
+        elif abs(value) < 1e-4:
             text += f'{value: .6e},'
-        elif abs(value) < 1e-3:
-            text += f'{value: .8f},'
+        elif abs(value) < 1e-2:
+            text += f'{value: .6f},'
         elif abs(value) < 1.0:
             text += f'{value: .4f},'
         else:
@@ -821,25 +862,25 @@ def print_cpar(cpar, without_code=False, print_it=True):
     text = ''
     if not without_code:
         text += f'cpar = de.dotdict(dict(\n'
-    text += _print_line('ID', int(cpar['ID']), 'ID of control parameter (not used during calculation)')
+    text += _print_line('ID',         int(cpar['ID']),       cpar_rules['ID']['comment'])
     text += f'  # Initial conditions:\n'
-    text += _print_line('R_E', float(cpar['R_E']), 'bubble equilibrium radius [m]')
-    text += _print_line('ratio', float(cpar['ratio']), 'initial radius / equilibrium radius R_0/R_E [-]')
-    text += _print_line('gases', cpar['gases'], 'indexes of species in initial bubble (list of species indexes)')
-    text += _print_line('fractions', cpar['fractions'], 'molar fractions of species in initial bubble (list of fractions for every gas)')
+    text += _print_line('R_E',        float(cpar['R_E']),    cpar_rules['R_E']['comment'])
+    text += _print_line('ratio',      float(cpar['ratio']),  cpar_rules['ratio']['comment'])
+    text += _print_line('gases',      cpar['gases'],         cpar_rules['gases']['comment'])
+    text += _print_line('fractions',  cpar['fractions'],     cpar_rules['fractions']['comment'])
     text += f'  # Ambient parameters:\n'
-    text += _print_line('P_amb', float(cpar['P_amb']), 'ambient pressure [Pa]')
-    text += _print_line('T_inf', float(cpar['T_inf']), 'ambient temperature [K]')
+    text += _print_line('P_amb',      float(cpar['P_amb']),  cpar_rules['P_amb']['comment'])
+    text += _print_line('T_inf',      float(cpar['T_inf']),  cpar_rules['T_inf']['comment'])
     text += f'  # Liquid parameters:\n'
-    text += _print_line('alfa_M', float(cpar['alfa_M']), 'water accommodation coefficient [-]')
-    text += _print_line('P_v', float(cpar['P_v']), 'vapour pressure [Pa]')
-    text += _print_line('mu_L', float(cpar['mu_L']), 'dynamic viscosity [Pa*s]')
-    text += _print_line('rho_L', float(cpar['rho_L']), 'density [kg/m^3]')
-    text += _print_line('c_L', float(cpar['c_L']), 'sound speed [m/s]')
-    text += _print_line('surfactant', float(cpar['surfactant']), 'surfactant (surface tension modfier) [-]')
+    text += _print_line('alfa_M',     float(cpar['alfa_M']), cpar_rules['alfa_M']['comment'])
+    text += _print_line('P_v',        float(cpar['P_v']),    cpar_rules['P_v']['comment'])
+    text += _print_line('mu_L',       float(cpar['mu_L']),   cpar_rules['mu_L']['comment'])
+    text += _print_line('rho_L',      float(cpar['rho_L']),  cpar_rules['rho_L']['comment'])
+    text += _print_line('c_L',        float(cpar['c_L']),    cpar_rules['c_L']['comment'])
+    text += _print_line('surfactant', float(cpar['surfactant']), cpar_rules['surfactant']['comment'])
     text += f'  # Excitation parameters: (excitation_type = {excitation_type})\n'
     for arg, unit in zip(excitation_args, excitation_units):
-        text += _print_line(arg, float(cpar[arg]), f'[{unit}]')
+        text += _print_line(arg,      float(cpar[arg]),      f'[{unit}]')
     if not without_code:
         text += f'))\n\n# Calculate pressure/temperature dependent parameters:\n'
         text += f'cpar.mu_L = de.viscosity(cpar.T_inf)\n'
@@ -873,11 +914,11 @@ def print_data(cpar, data, print_it=True):
         if (k+1) % 4 == 0: text += f'\n        '
     
     text += f'''\nResults:
-    collapse_time = {data.collapse_time} [s]
+    collapse_time = {data.collapse_time: .6e} [s]
     T_max ={data.T_max: .2f} [K]
-    expansion work = {data.expansion_work} [J]
-    dissipated acoustic energy = {data.dissipated_acoustic_energy} [J]
-    energy demand = {data.energy_demand} [MJ/kg of {target_specie}]'''
+    expansion work = {data.expansion_work: .6e} [J]
+    dissipated acoustic energy = {data.dissipated_acoustic_energy: .6e} [J]
+    energy demand = {data.energy_demand: .2f} [MJ/kg of {target_specie}]'''
     
     if print_it:
         print(text)
@@ -941,17 +982,17 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
     if type(cpar) == dict:
         cpar = dotdict(cpar)
 
-    num_sol, error_code, elapsed_time = solve(cpar, t_int, LSODA_timeout, Radau_timeout, extra_dims)
+    num_sol, error_code, elapsed_time = solve(cpar, t_int, LSODA_timeout, Radau_timeout, extra_dims, print_errors=True)
     data = get_data(cpar, num_sol, error_code, elapsed_time)
     
 # Print errors
     errors, success = get_errors(error_code, printit=True)
-    if not success:
+    if num_sol is None:
         print_data(cpar, data)
         return None
     
 # Calculations
-    if t_int[1] != 1.0: 
+    if t_int[1] != 1.0 or not success: 
         end_index = -1
     else:
         end_index = np.where(num_sol.t > n * data.collapse_time)[0][0]
@@ -1154,8 +1195,9 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
                 fig3.savefig(base_name+'_pressure.'+format, format=format, metadata=metadata, bbox_inches='tight')
             if plot_extra:
                 fig4.savefig(base_name+'_extra.'+format, format=format, metadata=metadata, bbox_inches='tight')
-        except:
+        except Exception as error:
             print(print(colored(f'Error in saving {base_name}_1.png','red')))
+            print(error)
 
 # print data
     print_data(cpar, data)
