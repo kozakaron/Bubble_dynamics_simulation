@@ -467,6 +467,7 @@ def _backward_rate(k_forward, S, H, T, P_amb):
             DeltaH += par.nu[i][k] * H[k]
         K_p = np.exp(DeltaS / par.R_erg - DeltaH / (par.R_erg * T))
         K_c = K_p * (P_amb * 10.0 / (par.R_erg * T)) ** np.sum(par.nu[i])
+        #K_c += (K_c == 0.0) * 1.0e-323  # MODIFIED
         k_backward[i] = k_forward[i] / K_c
     for i in par.IrreversibleIndexes:
         k_backward[i] = 0.0
@@ -655,7 +656,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
     except Exception as error:
         error_code += 3
         if print_errors:
-            print(colored(f'Error is solve(): LSODE had a fatal error:', 'red'))
+            print(colored(f'Error in solve(): LSODE had a fatal error:', 'red'))
             print(''.join(traceback.format_exception(error, limit=5)))
     if error_code % 10 != 0:
         try: # try-catch block
@@ -671,7 +672,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
         except Exception as error:
             error_code += 60
             if print_errors:
-                print(colored(f'Error is solve(): Radau had a fatal error:', 'red'))
+                print(colored(f'Error in solve(): Radau had a fatal error:', 'red'))
                 print(''.join(traceback.format_exception(error, limit=5)))
     
     end = time.time()

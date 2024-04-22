@@ -486,6 +486,7 @@ def _get_reactions(lines, species):
     for i in range(len(Plog)):
         Plog[i] = np.array(Plog[i], dtype=np.float64)
 
+    if alfa == []: alfa = [[]]
     if ReacConst == []: ReacConst = [[]]
     if Troe == []: Troe = [[]]
     if SRI == []: SRI = [[]]
