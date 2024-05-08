@@ -13,3 +13,5 @@ temp/*
 # Unwanted files
 *fkubicsek*
 *test*
+*copy*
+*ignore*

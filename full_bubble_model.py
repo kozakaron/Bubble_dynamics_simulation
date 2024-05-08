@@ -660,6 +660,8 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
         )
         if num_sol.success == False:
             error_code += 1
+            if print_errors:
+                print(colored(f'Error in solve(): LSODE didn\'t converge: ', 'yellow'), num_sol.message)
     except FunctionTimedOut:
         error_code += 2
     except Exception as error:
@@ -677,6 +679,8 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
             )
             if num_sol.success == False:
                 error_code += 40
+                if print_errors:
+                    print(colored(f'Error in solve(): Radau didn\'t converge: ', 'yellow'), num_sol.message)
         except FunctionTimedOut:
             error_code += 50
         except Exception as error:
