@@ -448,16 +448,25 @@ def _forward_rate(T, M_eff, M, p):
                 lower = k
         upper = lower + 1
 
+        # reaction rates at the lower and upper pressures
         k_lower = par.Plog[lower][1] * T ** par.Plog[lower][2] * np.exp(-par.Plog[lower][3] / (par.R_cal * T))
         k_upper = par.Plog[upper][1] * T ** par.Plog[upper][2] * np.exp(-par.Plog[upper][3] / (par.R_cal * T))
-        ln_k = np.log(k_lower) + (np.log(p) - np.log(par.Plog[lower][0])) / (np.log(par.Plog[upper][0]) - np.log(par.Plog[lower][0])) * (np.log(k_upper) - np.log(k_lower))
+
+        # interpolation
+        if par.Plog[par.PlogStart[j]][0] > p:   # p < smallest pressure level
+            ln_k=np.log(k_lower)
+        elif par.Plog[par.PlogStop[j]-1][0] < p:    # largest pressure level < p
+            ln_k=np.log(k_upper)
+        else:
+            ln_k = np.log(k_lower) + (np.log(p) - np.log(par.Plog[lower][0])) / (np.log(par.Plog[upper][0]) - np.log(par.Plog[lower][0])) * (np.log(k_upper) - np.log(k_lower))
+        
         k_forward[i] = np.exp(ln_k)
             
     return k_forward
 
 
-@njit(float64[:](float64[:], float64[:], float64[:], float64, float64))
-def _backward_rate(k_forward, S, H, T, P_amb):
+@njit(float64[:](float64[:], float64[:], float64[:], float64))
+def _backward_rate(k_forward, S, H, T):
     k_backward = np.zeros((par.I), dtype=np.float64)
     for i in range(par.I):
         DeltaS = 0.0
@@ -466,7 +475,8 @@ def _backward_rate(k_forward, S, H, T, P_amb):
             DeltaS += par.nu[i][k] * S[k]
             DeltaH += par.nu[i][k] * H[k]
         K_p = np.exp(DeltaS / par.R_erg - DeltaH / (par.R_erg * T))
-        K_c = K_p * (P_amb * 10.0 / (par.R_erg * T)) ** np.sum(par.nu[i])
+        K_c = K_p * (par.atm2Pa * 10.0 / (par.R_erg * T)) ** np.sum(par.nu[i])
+        #K_c += (K_c == 0.0) * 1.0e-323  # MODIFIED
         k_backward[i] = k_forward[i] / K_c
     for i in par.IrreversibleIndexes:
         k_backward[i] = 0.0
@@ -483,7 +493,7 @@ def _production_rate(T, H, S, c, P_amb, p, M):
             M_eff[j] += par.alfa[j][k] * c[k]
 # Forward and backward rates
     k_forward = _forward_rate(T=T, M_eff=M_eff, M=M, p=p)
-    k_backward = _backward_rate(k_forward=k_forward, S=S, H=H, T=T, P_amb=P_amb)
+    k_backward = _backward_rate(k_forward=k_forward, S=S, H=H, T=T)
 
 # Net rates
     q = np.zeros((par.I), dtype = np.float64)
@@ -644,34 +654,39 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
     try: # try-catch block
         num_sol = func_timeout( # timeout block
             LSODA_timeout, solve_ivp,
-            kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
-                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # f's arguments
+            kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # _f()'s arguments
             )
         )
         if num_sol.success == False:
             error_code += 1
+            if print_errors:
+                print(colored(f'Error in solve(): LSODE didn\'t converge: ', 'yellow'), num_sol.message)
     except FunctionTimedOut:
         error_code += 2
     except Exception as error:
         error_code += 3
         if print_errors:
-            print(colored(f'Error is solve(): LSODE had a fatal error:', 'red'))
+            print(colored(f'Error in solve(): LSODE had a fatal error:', 'red'))
             print(''.join(traceback.format_exception(error, limit=5)))
     if error_code % 10 != 0:
         try: # try-catch block
             num_sol = func_timeout( # timeout block
                 Radau_timeout, solve_ivp, 
-                kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp's arguments
-                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims)) # f's arguments
+                kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
+                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # _f()'s arguments
+                )
             )
             if num_sol.success == False:
                 error_code += 40
+                if print_errors:
+                    print(colored(f'Error in solve(): Radau didn\'t converge: ', 'yellow'), num_sol.message)
         except FunctionTimedOut:
             error_code += 50
         except Exception as error:
             error_code += 60
             if print_errors:
-                print(colored(f'Error is solve(): Radau had a fatal error:', 'red'))
+                print(colored(f'Error in solve(): Radau had a fatal error:', 'red'))
                 print(''.join(traceback.format_exception(error, limit=5)))
     
     end = time.time()
