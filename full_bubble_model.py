@@ -173,7 +173,7 @@ def check_cpar(cpar):
                     print(colored(f'Error in cpar, key \'{key}\' has wrong type. Expected {list_type.__name__}, recieved {type(cpar[key]).__name__}: cpar.{key} = {cpar[key]}', 'red'))
                     return False
             if len(cpar[key]) == 0:   # check list length
-                print(colored(f'Error in cpar, key \'{key}\' is empty: cpar.{key} = {cpar[key]}', 'red'))
+                print(colored(f'Error in cpar, key \'{key}\' is zeros: cpar.{key} = {cpar[key]}', 'red'))
                 return False
             for i, element in enumerate(cpar[key]):
                 if type(element) != element_type:   # check element type
@@ -328,7 +328,7 @@ def _pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, args):
 # returns molar heat capacities, enthalpies and entropies
 @njit(float64[:, :](float64))
 def _thermodynamic(T):
-    ret = np.zeros((4, par.K), dtype=np.float64)   # [C_p, H, S, C_v]
+    ret = np.empty((4, par.K), dtype=np.float64)   # [C_p, H, S, C_v]
     for k in range(par.K):
     # get coefficients for T
         if T <= par.TempRange[k][2]: # T <= T_mid
@@ -467,7 +467,7 @@ def _forward_rate(T, M_eff, M, p):
 
 @njit(float64[:](float64[:], float64[:], float64[:], float64))
 def _backward_rate(k_forward, S, H, T):
-    k_backward = np.zeros((par.I), dtype=np.float64)
+    k_backward = np.empty((par.I), dtype=np.float64)
     for i in range(par.I):
         DeltaS = 0.0
         DeltaH = 0.0
@@ -496,7 +496,7 @@ def _production_rate(T, H, S, c, P_amb, p, M):
     k_backward = _backward_rate(k_forward=k_forward, S=S, H=H, T=T)
 
 # Net rates
-    q = np.zeros((par.I), dtype = np.float64)
+    q = np.empty((par.I), dtype = np.float64)
     for i in range(par.I):
         forward = 1.0
         backward = 1.0
@@ -531,7 +531,7 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args, e
     M = np.sum(c) # sum of concentration
     X = c / M     # mole fraction [-]
     p = 0.1 * M * par.R_erg * T # Partial pressure of the gases [Pa]
-    dxdt = np.zeros(x.shape, dtype = np.float64)
+    dxdt = np.empty(x.shape, dtype = np.float64)
     
 # d/dt R
     dxdt[0] = R_dot
