@@ -70,7 +70,8 @@ class OdeResult:
      * runtime: float, time taken to solve the ODE
      * message: str, human-readable description of the termination reason
      * success: bool, True if the solver reached the interval end or a termination event occurred
-     * details: str, in case of runtime error, this field contains the traceback"""
+     * details: str, in case of runtime error, this field contains the traceback
+     * kwargs: any extra fields passed to the constructor (currently T_max and collapse_time)"""
 
     def __init__(self, t, y, nstep=0, nfev=0, nfev_jac=0, njac=0, nlu=0, runtime=0.0,
                 message='', success=True, details='', **kwargs):
@@ -217,6 +218,9 @@ def solve_ivp(fun, t_span, y0, method='RK45', timeout=-1.0, args=None,
         So if, for example, `fun` has the signature ``fun(t, y, a, b, c)``,
         then `jac` (if given) and any event functions must have the same
         signature, and `args` must be a tuple of length 3.
+    timeout : float, optional
+        Process time (not real time) is measured after each step. When timeout seconds are reached, 
+        the solver stops and returns the current solution. Default is -1.0, i.e., no timeout.
     use_builtin_jac : bool, optional
         If True, the solver will use a built-in Jacobian approximation. Otherwise,
         the improved Jacobian will be used. Doesn't matter if `jac` is provided. Default is False.
