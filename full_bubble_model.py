@@ -695,7 +695,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
     # solving d/dt x=f(t, x, cpar)
     # Try with LSODA
     num_sol1 = scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='LSODA', timeout=LSODA_timeout, args=args,
-                                   use_builtin_jac=True, compression=compression, atol=1e-10, rtol=1e-10)
+                                   use_builtin_jac=False, compression=compression, atol=1e-10, rtol=1e-10)
     if num_sol1.success == False:
         if 'Runtime error' in num_sol1.message:
             error_code += 3
@@ -712,8 +712,8 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
                 print(colored(error_codes['xx1']['describtion'], error_codes['xx1']['color']) + ': ' + num_sol1.message)
 
         # Try with Radau
-        num_sol2 = scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='LSODA', timeout=Radau_timeout, args=args,
-                                       use_builtin_jac=True, compression=compression, atol = 1e-10, rtol=1e-10)
+        num_sol2 = scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='Radau', timeout=Radau_timeout, args=args,
+                                       use_builtin_jac=False, compression=compression, atol = 1e-10, rtol=1e-10)
         if num_sol2.success == False:            
             if 'Runtime error' in num_sol2.message:
                 error_code += 60
@@ -788,7 +788,6 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     Returns:
      * data: dotdict with the post processing data (e.g. collapse time, energy demand, etc.)
     """
-    # TODO add more data to the output
     if type(cpar) == dict:
         cpar = dotdict(cpar)
     # copy cpar:
@@ -845,19 +844,21 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
         return data
     
     # normal functioning
-    data.steps = num_sol.nstep
+    data.steps = getattr(num_sol, 'nstep', 0)
     data.x_initial = num_sol.y[0] # initial values of [R, R_dot, T, c_1, ... c_K]
-    data.collapse_time = num_sol.collapse_time # [s]
-    data.T_max = num_sol.T_max # maximum of temperature peaks [K]
-    data.nstep = num_sol.nstep
+    data.collapse_time = getattr(num_sol, 'collapse_time', 0.0) # [s]
+    data.T_max = getattr(num_sol, 'T_max', 0.0) # maximum of temperature peaks [K]
+    data.nstep = getattr(num_sol, 'nstep', 0)
     data.saved_steps = len(num_sol.t)
-    data.nfev = num_sol.nfev
-    data.njac = num_sol.njac
-    data.nlu = num_sol.nlu
-    data.message = num_sol.message
+    data.nfev = getattr(num_sol, 'nfev', 0)
+    data.njac = getattr(num_sol, 'njac', 0)
+    data.nlu = getattr(num_sol, 'nlu', 0)
+    data.message = getattr(num_sol, 'message', 0).replace('\n', ' ').replace(',', ' ').replace(';', ' ')
         
     # energy calculations
     data.x_final = num_sol.y[-1] # final values of [R, R_dot, T, c_1, ... c_K]
+    if not all(np.isfinite(data.x_final)) and len(num_sol.y > 2):
+        data.x_final = num_sol.y[-2]
     data.t_final = num_sol.t[-1] # [s]
     last_V = 4.0 / 3.0 * (100.0 * data.x_final[0]) ** 3 * np.pi # [cm^3]
     data[f'n_{target_specie}'] = data.x_final[3+par.index[target_specie]] * last_V # [mol]
@@ -872,7 +873,8 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
 
 # keys of data: (except x_final and x_initial)
 keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'rho_L', 'gases', 'fractions', 'surfactant', 'c_L',
-        'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_demand',
+        'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', 'nstep', 'saved_steps', 'nfev', 'njac', 'nlu', 'message',
+        f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_demand',
         'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
 
 def _print_line(name, value, comment, print_it=False):
@@ -967,7 +969,7 @@ def print_data(cpar, data, print_it=True):
     
     text += f'''\n\nFinal state:
     R_final ={1e6*data.x_final[0]: .2f} [um];   R_dot_final ={data.x_final[1]} [m/s];   T_final ={data.x_final[2]: .2f} [K]
-    n_{target_specie}_final ={data[f'n_{target_specie}']: .2e} [mol]
+    n_{target_specie}_final ={data[f'n_{target_specie}']: .2e} [mol];   t_final ={data.t_final: .6e} [s]
     Final molar concentrations: [mol/cm^3]\n        '''
     
     for k, specie in enumerate(par.species):
@@ -1073,15 +1075,15 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
     if plot_pressure:
         internal_pressure = np.sum(n, axis=0) * par.R_g * T / V # [MPa]
     if plot_extra:
-        if len(num_sol.y[:, 0]) != 4+par.K+extra_dims or extra_dims != len(extra_dim_labels):
+        if len(num_sol.y[0]) != 4+par.K+extra_dims or extra_dims != len(extra_dim_labels):
             print(colored('Error! The number of extra dimensions is incorrect. ', 'red'))
-            print(f'Number of dimensions: {len(num_sol.y[:, 0])=}')
+            print(f'Number of dimensions: {len(num_sol.y[0])=}')
             print(f'Number of dimensions should be: {4+par.K+extra_dims=}')
             print(f'Number of extra dimensions: {extra_dims=}')
             print(f'Number of extra dimension labels: {len(extra_dim_labels)=}')
             print_data(cpar, data)
             return None
-        extra_plots = num_sol.y[3+par.K : 4+par.K+extra_dims, :end_index]
+        extra_plots = num_sol.y[:end_index, 3+par.K : 4+par.K+extra_dims]
 
 # plot R and T
     linewidth = 2.0 if presentation_mode else 1.0
@@ -1224,7 +1226,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
         linewidth = 2.0 if presentation_mode else 1.0
         fig4 = plt.figure(figsize=(16, 9) if presentation_mode else (20, 6))
         ax = fig4.add_subplot(axisbelow=True)
-        for extra_dim_label, extra_plot in zip(extra_dim_labels, extra_plots):
+        for extra_dim_label, extra_plot in zip(extra_dim_labels, extra_plots.T):
             ax.plot(t, extra_plot, label=extra_dim_label, linewidth=linewidth)
 
         if num_sol.t[end_index] < 1e-3:

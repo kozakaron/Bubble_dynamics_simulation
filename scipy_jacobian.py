@@ -3,10 +3,11 @@ This is a modified and JIT-ted version of the internal numerical Jacobian approx
 The original code can be found at `scipy/integrate/_ivp/common.py` in the SciPy source code.
 """
 
-
 import numpy as np
 from numba import njit
 from numba.types import Tuple, float64, int64   # JIT types
+
+ENABLE_JIT = True
 
 # To avoid unnecessary recompilation with numba JIT
 fun_id = 0
@@ -104,6 +105,9 @@ def wrap_num_jac(fun):
         factor = np.minimum(factor, NUM_JAC_MAX_FACTOR)
         
         return diff, factor, neval
+
+    if not ENABLE_JIT:
+        return num_jac
 
     try:                       # ret:  diff, factor, neval
         num_jac_jit = njit(    # args: t, y, threshold, factor, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args, extra_dims

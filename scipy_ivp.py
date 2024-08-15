@@ -385,7 +385,6 @@ def solve_ivp(fun, t_span, y0, method='RK45', timeout=-1.0, args=None,
             message = 'The solver successfully reached the end of the integration interval.'
         elif solver.status == 'failed':
             status = -1
-            message = 'A termination event occurred.'
             break
         if timeout >= 0.0 and time.process_time() - start_time > timeout:  # Timeout
             status = -1
