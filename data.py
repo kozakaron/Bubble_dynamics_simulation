@@ -156,6 +156,7 @@ physical_constants = dict(
     R_cal = dict(value=None, comment='Universal gas constant [cal/mol/K]'),
     N_A = dict(value=6.02214e23, comment='Avogadro\'s number [-]'),
     h = dict(value=6.62607015e-34, comment='Planck constant [m^2*kg/s]'),
+    k_B = dict(value=None, comment='Boltzmann constant [J/K]'),
     R_v = dict(value=None, comment='Specific gas constant of water [J/kg/K]'),
     erg2J = dict(value=1e-7, comment='Conversion factor from erg to J'),
     cal2J = dict(value=4.184, comment='Conversion factor from cal to J'),
@@ -165,6 +166,7 @@ physical_constants = dict(
 )
 
 def calculate_missing_constants():
+    physical_constants['k_B']['value'] = physical_constants['R_g']['value']/physical_constants['N_A']['value']
     physical_constants['R_erg']['value'] = round(physical_constants['R_g']['value'] / physical_constants['erg2J']['value'], 1)
     physical_constants['R_cal']['value'] = round(physical_constants['R_g']['value'] / physical_constants['cal2J']['value'], 6)
     physical_constants['R_v']['value'] = round(1000.0 * physical_constants['R_g']['value'] / (2*W['H'] + W['O']), 6)

@@ -25,25 +25,29 @@ Usage:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = False
+enable_evaporation = True
 enable_reactions = True
-enable_dissipated_energy = True
+enable_dissipated_energy = False
 target_specie = 'NH3' # Specie to calculate energy demand for
-excitation_type = 'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
+excitation_type = 'no_excitation'#'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
 
 """________________________________Libraries________________________________"""
 
 from termcolor import colored   # colored error messages
 import matplotlib.pyplot as plt   # for plotting
 import numpy as np   # matrices, math
+from scipy.integrate import solve_ivp   # differential equation solver
+from scipy.signal import argrelmin   # loc min finding
 import time   # runtime measurement
 from datetime import datetime   # for accessing current datetime
 import socket   # for accessing computer name
 import psutil   # get system information
 from numba import njit   # Just In Time compiler
 from numba.types import Tuple, unicode_type, float64, float32, int64, int32   # JIT types
+from func_timeout import func_timeout, FunctionTimedOut   # for timeout
 import os    # file management
 import importlib   # for reloading your own files
+import traceback   # for error handling
 
 # import parameters.py as par:
 try:
@@ -410,8 +414,8 @@ def _evaporation(p, T, X_H2O, alfa_M, T_inf, P_v):
 
 """________________________________Reaction rates________________________________"""
 
-@njit(float64[:](float64, float64[:], float64, float64))
-def _forward_rate(T, M_eff, M, p):
+@njit(float64[:](float64, float64[:], float64, float64, float64))
+def _forward_rate(T, M_eff, M, p, reaction_rate_treshold):
 # Reaction rate
     k_forward = par.A * T ** par.b * np.exp(-par.E / (par.R_cal * T))
     
@@ -475,11 +479,14 @@ def _forward_rate(T, M_eff, M, p):
         
         k_forward[i] = np.exp(ln_k)
             
+        for i in range(par.I):
+            if(abs(k_forward[i]) > reaction_rate_treshold):
+                k_forward[i] = reaction_rate_treshold * np.sign(k_forward[i])
     return k_forward
 
 
-@njit(float64[:](float64[:], float64[:], float64[:], float64))
-def _backward_rate(k_forward, S, H, T):
+@njit(float64[:](float64[:], float64[:], float64[:], float64, float64))
+def _backward_rate(k_forward, S, H, T, reaction_rate_treshold):
     k_backward = np.empty((par.I), dtype=np.float64)
     for i in range(par.I):
         DeltaS = 0.0
@@ -493,7 +500,10 @@ def _backward_rate(k_forward, S, H, T):
         k_backward[i] = k_forward[i] / K_c
     for i in par.IrreversibleIndexes:
         k_backward[i] = 0.0
-        
+    
+    for i in range(par.I):
+        if(abs(k_backward[i]) > reaction_rate_treshold):
+            k_backward[i] = reaction_rate_treshold * np.sign(k_backward[i])
     return k_backward
 
 
@@ -505,8 +515,9 @@ def _production_rate(T, H, S, c, P_amb, p, M):
         for k in range(par.K):
             M_eff[j] += par.alfa[j][k] * c[k]
 # Forward and backward rates
-    k_forward = _forward_rate(T=T, M_eff=M_eff, M=M, p=p)
-    k_backward = _backward_rate(k_forward=k_forward, S=S, H=H, T=T)
+    reaction_rate_treshold = par.k_B * T / par.h
+    k_forward = _forward_rate(T=T, M_eff=M_eff, M=M, p=p, reaction_rate_treshold=reaction_rate_treshold)
+    k_backward = _backward_rate(k_forward=k_forward, S=S, H=H, T=T, reaction_rate_treshold=reaction_rate_treshold)
 
 # Net rates
     q = np.empty((par.I), dtype = np.float64)
@@ -665,6 +676,8 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
         
     error_code = 0
     start = time.time()
+    num_sol1 = None
+    num_sol2 = None
     if not check_cpar(cpar):
         error_code += 300
         if print_errors:
@@ -690,57 +703,110 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
     
     # solving d/dt x=f(t, x, cpar)
     # Try with LSODA
-    num_sol1 = scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='LSODA', timeout=LSODA_timeout, args=args,
-                                   use_builtin_jac=False, compression=compression, atol=1e-10, rtol=1e-10)
-    if num_sol1.success == False:
-        if 'Runtime error' in num_sol1.message:
-            error_code += 3
-            if print_errors:
-                print(colored(error_codes['xx3']['describtion'], error_codes['xx3']['color']) + ': ' + num_sol1.message)
-                print(num_sol1.details)
-        elif 'timed out' in num_sol1.message:
-            error_code += 2
-            if print_errors:
-                print(colored(error_codes['xx2']['describtion'], error_codes['xx2']['color']) + ': ' + num_sol1.message)
-        else:   # Convergence error
+    try: # try-catch block
+        num_sol1 = func_timeout( # timeout block
+            LSODA_timeout, solve_ivp,
+            kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # _f()'s arguments
+            )
+        )
+        num_sol1.y=num_sol1.y.transpose()
+        if num_sol1.success == False:
             error_code += 1
             if print_errors:
-                print(colored(error_codes['xx1']['describtion'], error_codes['xx1']['color']) + ': ' + num_sol1.message)
-
-        # Try with Radau
-        num_sol2 = scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='Radau', timeout=Radau_timeout, args=args,
-                                       use_builtin_jac=False, compression=compression, atol = 1e-10, rtol=1e-10)
-        if num_sol2.success == False:            
-            if 'Runtime error' in num_sol2.message:
-                error_code += 60
-                if print_errors:
-                    print(colored(error_codes['x6x']['describtion'], error_codes['x6x']['color']) + ': ' + num_sol2.message)
-                    print(num_sol2.details)
-            elif 'timed out' in num_sol2.message:
-                error_code += 50
-                if print_errors:
-                    print(colored(error_codes['x5x']['describtion'], error_codes['x5x']['color']) + ': ' + num_sol2.message)
-            else:   # Convergence error
+                print(colored(f'Error in solve(): LSODE didn\'t converge: ', 'yellow'), num_sol1.message)
+    except FunctionTimedOut:
+        error_code += 2
+    except Exception as error:
+        error_code += 3
+        if print_errors:
+            print(colored(f'Error in solve(): LSODE had a fatal error:', 'red'))
+            tb=error.__traceback__
+            print(''.join(traceback.format_exception(error, error, tb, limit=5)))
+    if error_code % 10 != 0:
+        try: # try-catch block
+            num_sol2 = func_timeout( # timeout block
+                Radau_timeout, solve_ivp, 
+                kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
+                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # _f()'s arguments
+                )
+            )
+            num_sol2.y=num_sol2.y.transpose()
+            if num_sol2.success == False:
                 error_code += 40
                 if print_errors:
-                    print(colored(error_codes['x4x']['describtion'], error_codes['x4x']['color']) + ': ' + num_sol2.message)
-        else:
+                    print(colored(f'Error in solve(): Radau didn\'t converge: ', 'yellow'), num_sol2.message)
+        except FunctionTimedOut:
+            error_code += 50
+        except Exception as error:
+            error_code += 60
+            tb=error.__traceback__
             if print_errors:
-                print(colored(error_codes['x0x']['describtion'], error_codes['x0x']['color']))
-    else:
-        if print_errors:
-            print(colored(error_codes['xx0']['describtion'], error_codes['xx0']['color']))
+                print(colored(f'Error in solve(): Radau had a fatal error:', 'red'))
+                print(''.join(traceback.format_exception(error, error, tb, limit=5)))         
+        
+        #scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='LSODA', timeout=LSODA_timeout, args=args,
+                                   #use_builtin_jac=False, compression=compression, atol=1e-10, rtol=1e-10)
+        #if num_sol1.success == False:
+        #    if 'Runtime error' in num_sol1.message:
+        #        error_code += 3
+        #        if print_errors:
+        #            print(colored(error_codes['xx3']['describtion'], error_codes['xx3']['color']) + ': ' + num_sol1.message)
+        #            print(num_sol1.details)
+        #    elif 'timed out' in num_sol1.message:
+        #        error_code += 2
+        #        if print_errors:
+        #            print(colored(error_codes['xx2']['describtion'], error_codes['xx2']['color']) + ': ' + num_sol1.message)
+        #    else:   # Convergence error
+        #        error_code += 1
+        #        if print_errors:
+        #            print(colored(error_codes['xx1']['describtion'], error_codes['xx1']['color']) + ': ' + num_sol1.message)
+
+        # Try with Radau
+        #num_sol2 = scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='Radau', timeout=Radau_timeout, args=args,
+                                       #use_builtin_jac=False, compression=compression, atol = 1e-10, rtol=1e-10)
+        #num_sol2.y=num_sol2.y.transpose()
+        #if num_sol2.success == False:            
+        #    if 'Runtime error' in num_sol2.message:
+        #        error_code += 60
+        #        if print_errors:
+        #            print(colored(error_codes['x6x']['describtion'], error_codes['x6x']['color']) + ': ' + num_sol2.message)
+        #            print(num_sol2.details)
+        #    elif 'timed out' in num_sol2.message:
+        #        error_code += 50
+        #        if print_errors:
+        #            print(colored(error_codes['x5x']['describtion'], error_codes['x5x']['color']) + ': ' + num_sol2.message)
+        #    else:   # Convergence error
+        #        error_code += 40
+        #        if print_errors:
+        #            print(colored(error_codes['x4x']['describtion'], error_codes['x4x']['color']) + ': ' + num_sol2.message)
+        #else:
+        #    if print_errors:
+        #        print(colored(error_codes['x0x']['describtion'], error_codes['x0x']['color']))
+    #else:
+        #if print_errors:
+            #print(colored(error_codes['xx0']['describtion'], error_codes['xx0']['color']))
     
     end = time.time()
     elapsed_time = (end - start)
     
-    if num_sol1.success:
-        return num_sol1, error_code, elapsed_time
-    else:
-        if num_sol1.t[-1] > num_sol2.t[-1]:
+    if num_sol1 is not None:
+        if num_sol1.success:
             return num_sol1, error_code, elapsed_time
         else:
+            if num_sol2 is not None:
+                if num_sol1.t[-1] > num_sol2.t[-1]:
+                    return num_sol1, error_code, elapsed_time
+                else:
+                    return num_sol2, error_code, elapsed_time
+            else:
+                return None, error_code, elapsed_time
+    else:
+        if num_sol2 is not None and 't' in num_sol2: 
             return num_sol2, error_code, elapsed_time
+        else:
+            return None, error_code, elapsed_time
+
 
 def get_errors(error_code, printit=False):
     """
