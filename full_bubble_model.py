@@ -25,11 +25,11 @@ Usage:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = True
+enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = False
 target_specie = 'NH3' # Specie to calculate energy demand for
-excitation_type = 'no_excitation'#'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
+excitation_type = 'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
 
 """________________________________Libraries________________________________"""
 
