@@ -25,7 +25,7 @@ Usage:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = False
+enable_evaporation = True
 enable_reactions = True
 enable_dissipated_energy = False
 target_specie = 'NH3' # Specie to calculate energy demand for
@@ -36,12 +36,15 @@ excitation_type = 'no_excitation'#'sin_impulse' # function to calculate pressure
 from termcolor import colored   # colored error messages
 import matplotlib.pyplot as plt   # for plotting
 import numpy as np   # matrices, math
+from scipy.integrate import solve_ivp   # differential equation solver
+from scipy.signal import argrelmin   # loc min finding
 import time   # runtime measurement
 from datetime import datetime   # for accessing current datetime
 import socket   # for accessing computer name
 import psutil   # get system information
 from numba import njit   # Just In Time compiler
 from numba.types import Tuple, unicode_type, float64, float32, int64, int32   # JIT types
+from func_timeout import func_timeout, FunctionTimedOut   # for timeout
 import os    # file management
 import importlib   # for reloading your own files
 
