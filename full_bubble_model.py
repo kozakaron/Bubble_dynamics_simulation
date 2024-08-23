@@ -47,6 +47,7 @@ from numba.types import Tuple, unicode_type, float64, float32, int64, int32   # 
 from func_timeout import func_timeout, FunctionTimedOut   # for timeout
 import os    # file management
 import importlib   # for reloading your own files
+import traceback   # for error handling
 
 # import parameters.py as par:
 try:
@@ -675,6 +676,8 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
         
     error_code = 0
     start = time.time()
+    num_sol1 = None
+    num_sol2 = None
     if not check_cpar(cpar):
         error_code += 300
         if print_errors:
@@ -700,66 +703,110 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
     
     # solving d/dt x=f(t, x, cpar)
     # Try with LSODA
-    num_sol1 = func_timeout( # timeout block
+    try: # try-catch block
+        num_sol1 = func_timeout( # timeout block
             LSODA_timeout, solve_ivp,
             kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
                         args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # _f()'s arguments
-                       ))#scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='LSODA', timeout=LSODA_timeout, args=args,
-                                   #use_builtin_jac=False, compression=compression, atol=1e-10, rtol=1e-10)
-    num_sol1.y=num_sol1.y.transpose()
-    if num_sol1.success == False:
-        if 'Runtime error' in num_sol1.message:
-            error_code += 3
-            if print_errors:
-                print(colored(error_codes['xx3']['describtion'], error_codes['xx3']['color']) + ': ' + num_sol1.message)
-                print(num_sol1.details)
-        elif 'timed out' in num_sol1.message:
-            error_code += 2
-            if print_errors:
-                print(colored(error_codes['xx2']['describtion'], error_codes['xx2']['color']) + ': ' + num_sol1.message)
-        else:   # Convergence error
+            )
+        )
+        num_sol1.y=num_sol1.y.transpose()
+        if num_sol1.success == False:
             error_code += 1
             if print_errors:
-                print(colored(error_codes['xx1']['describtion'], error_codes['xx1']['color']) + ': ' + num_sol1.message)
-
-        # Try with Radau
-        num_sol2 = func_timeout( # timeout block
+                print(colored(f'Error in solve(): LSODE didn\'t converge: ', 'yellow'), num_sol1.message)
+    except FunctionTimedOut:
+        error_code += 2
+    except Exception as error:
+        error_code += 3
+        if print_errors:
+            print(colored(f'Error in solve(): LSODE had a fatal error:', 'red'))
+            tb=error.__traceback__
+            print(''.join(traceback.format_exception(error, error, tb, limit=5)))
+    if error_code % 10 != 0:
+        try: # try-catch block
+            num_sol2 = func_timeout( # timeout block
                 Radau_timeout, solve_ivp, 
                 kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
-                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims)))#scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='Radau', timeout=Radau_timeout, args=args,
-                                       #use_builtin_jac=False, compression=compression, atol = 1e-10, rtol=1e-10)
-        num_sol2.y=num_sol2.y.transpose()
-        if num_sol2.success == False:            
-            if 'Runtime error' in num_sol2.message:
-                error_code += 60
-                if print_errors:
-                    print(colored(error_codes['x6x']['describtion'], error_codes['x6x']['color']) + ': ' + num_sol2.message)
-                    print(num_sol2.details)
-            elif 'timed out' in num_sol2.message:
-                error_code += 50
-                if print_errors:
-                    print(colored(error_codes['x5x']['describtion'], error_codes['x5x']['color']) + ': ' + num_sol2.message)
-            else:   # Convergence error
+                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # _f()'s arguments
+                )
+            )
+            num_sol2.y=num_sol2.y.transpose()
+            if num_sol2.success == False:
                 error_code += 40
                 if print_errors:
-                    print(colored(error_codes['x4x']['describtion'], error_codes['x4x']['color']) + ': ' + num_sol2.message)
-        else:
+                    print(colored(f'Error in solve(): Radau didn\'t converge: ', 'yellow'), num_sol2.message)
+        except FunctionTimedOut:
+            error_code += 50
+        except Exception as error:
+            error_code += 60
+            tb=error.__traceback__
             if print_errors:
-                print(colored(error_codes['x0x']['describtion'], error_codes['x0x']['color']))
-    else:
-        if print_errors:
-            print(colored(error_codes['xx0']['describtion'], error_codes['xx0']['color']))
+                print(colored(f'Error in solve(): Radau had a fatal error:', 'red'))
+                print(''.join(traceback.format_exception(error, error, tb, limit=5)))         
+        
+        #scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='LSODA', timeout=LSODA_timeout, args=args,
+                                   #use_builtin_jac=False, compression=compression, atol=1e-10, rtol=1e-10)
+        #if num_sol1.success == False:
+        #    if 'Runtime error' in num_sol1.message:
+        #        error_code += 3
+        #        if print_errors:
+        #            print(colored(error_codes['xx3']['describtion'], error_codes['xx3']['color']) + ': ' + num_sol1.message)
+        #            print(num_sol1.details)
+        #    elif 'timed out' in num_sol1.message:
+        #        error_code += 2
+        #        if print_errors:
+        #            print(colored(error_codes['xx2']['describtion'], error_codes['xx2']['color']) + ': ' + num_sol1.message)
+        #    else:   # Convergence error
+        #        error_code += 1
+        #        if print_errors:
+        #            print(colored(error_codes['xx1']['describtion'], error_codes['xx1']['color']) + ': ' + num_sol1.message)
+
+        # Try with Radau
+        #num_sol2 = scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='Radau', timeout=Radau_timeout, args=args,
+                                       #use_builtin_jac=False, compression=compression, atol = 1e-10, rtol=1e-10)
+        #num_sol2.y=num_sol2.y.transpose()
+        #if num_sol2.success == False:            
+        #    if 'Runtime error' in num_sol2.message:
+        #        error_code += 60
+        #        if print_errors:
+        #            print(colored(error_codes['x6x']['describtion'], error_codes['x6x']['color']) + ': ' + num_sol2.message)
+        #            print(num_sol2.details)
+        #    elif 'timed out' in num_sol2.message:
+        #        error_code += 50
+        #        if print_errors:
+        #            print(colored(error_codes['x5x']['describtion'], error_codes['x5x']['color']) + ': ' + num_sol2.message)
+        #    else:   # Convergence error
+        #        error_code += 40
+        #        if print_errors:
+        #            print(colored(error_codes['x4x']['describtion'], error_codes['x4x']['color']) + ': ' + num_sol2.message)
+        #else:
+        #    if print_errors:
+        #        print(colored(error_codes['x0x']['describtion'], error_codes['x0x']['color']))
+    #else:
+        #if print_errors:
+            #print(colored(error_codes['xx0']['describtion'], error_codes['xx0']['color']))
     
     end = time.time()
     elapsed_time = (end - start)
     
-    if num_sol1.success:
-        return num_sol1, error_code, elapsed_time
-    else:
-        if num_sol1.t[-1] > num_sol2.t[-1]:
+    if num_sol1 is not None:
+        if num_sol1.success:
             return num_sol1, error_code, elapsed_time
         else:
+            if num_sol2 is not None:
+                if num_sol1.t[-1] > num_sol2.t[-1]:
+                    return num_sol1, error_code, elapsed_time
+                else:
+                    return num_sol2, error_code, elapsed_time
+            else:
+                return None, error_code, elapsed_time
+    else:
+        if num_sol2 is not None and 't' in num_sol2: 
             return num_sol2, error_code, elapsed_time
+        else:
+            return None, error_code, elapsed_time
+
 
 def get_errors(error_code, printit=False):
     """
