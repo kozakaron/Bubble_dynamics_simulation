@@ -29,7 +29,7 @@ enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = False
 target_specie = 'NH3' # Specie to calculate energy demand for
-excitation_type = 'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
+excitation_type = 'no_excitation'#'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
 
 """________________________________Libraries________________________________"""
 
@@ -886,8 +886,8 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.m_target = 0.0
     data.expansion_work = 0.0
     data.dissipated_acoustic_energy = 0.0
-    data.energy_demand = 1.0e30
-    data.energy_efficiency = 1.0e30 # legacy for data.energy_demand
+    data.energy_demand = 0.0#1.0e30
+    data.energy_efficiency = 0.0#1.0e30 # legacy for data.energy_demand
     data.enable_heat_transfer = enable_heat_transfer
     data.enable_evaporation = enable_evaporation
     data.enable_reactions = enable_reactions
@@ -908,8 +908,13 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     # normal functioning
     data.steps = getattr(num_sol, 'nstep', 0)
     data.x_initial = num_sol.y[0] # initial values of [R, R_dot, T, c_1, ... c_K]
-    data.collapse_time = getattr(num_sol, 'collapse_time', 0.0) # [s]
-    data.T_max = getattr(num_sol, 'T_max', 0.0) # maximum of temperature peaks [K]
+    #data.collapse_time = getattr(num_sol, 'collapse_time', 0.0) # [s]
+    loc_min = argrelmin(num_sol.y[:,0])
+    data.collapse_time = 0.0
+    if not len(loc_min[0]) == 0:
+        data.collapse_time = num_sol.t[loc_min[0][0]]
+    #data.T_max = getattr(num_sol, 'T_max', 0.0) # maximum of temperature peaks [K]
+    data.T_max = np.max(num_sol.y[:,2]) # maximum of temperature peaks [K]
     data.nstep = getattr(num_sol, 'nstep', 0)
     data.saved_steps = len(num_sol.t)
     data.nfev = getattr(num_sol, 'nfev', 0)
@@ -928,7 +933,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.expansion_work = _work(cpar, enable_evaporation) # [J]
     data.dissipated_acoustic_energy = data.x_final[3+par.K]  # [J]
     all_work = data.expansion_work + data.dissipated_acoustic_energy
-    data.energy_demand = 1.0e-6 * all_work / m_target if m_target > 0.0 else 1.0e30 # [MJ/kg]
+    data.energy_demand = 1.0e-6 * all_work / m_target if m_target > 0.0 else 0.0#1.0e30 # [MJ/kg]
     data.energy_efficiency = data.energy_demand # legacy for data.energy_demand
     data.target_specie = target_specie
     return data
