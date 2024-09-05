@@ -182,7 +182,7 @@ kwargs_list = [dict(
     to_optimize=to_optimize,
     start_point=gm.fix_starter_point(ranges, i, cpars[i], gases=[gm.de.par.index['H2'], gm.de.par.index['N2']]),
     max_steps=2000, #in gradient method
-    first_step=0.0000115, #between two parameter combinations
+    first_step=0.05, #between two parameter combinations
     min_step=0.00001, #between two parameter combinations
     decay=0.6,
     gamma=1.0, #x_n+1=x_n-gamma*grad(F(x_n))
