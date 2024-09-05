@@ -27,11 +27,9 @@ Usage:
 enable_heat_transfer = True
 enable_evaporation = False
 enable_reactions = True
-enable_dissipated_energy = False
-enable_reaction_rate_threshold = False
-enable_time_evaluation_limit = False
+enable_dissipated_energy = True
 target_specie = 'NH3' # Specie to calculate energy demand for
-excitation_type = 'no_excitation' # function to calculate pressure excitation (see excitation.py for options)
+excitation_type = 'no_excitation'#'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
 
 """________________________________Libraries________________________________"""
 
@@ -77,6 +75,23 @@ except Exception as _error:
     print(colored(f'Error, \'excitation.py\' failed to load', 'red'))
     raise _error
 
+# import scipy_ivp.py as scipy_ivp:
+try:
+    import scipy_ivp
+    importlib.reload(scipy_ivp)
+except ImportError as _error:
+    try:
+        from  Bubble_dynamics_simulation import scipy_ivp
+        importlib.reload(scipy_ivp)
+    except ImportError as _error:
+        print(colored(f'Error, \'scipy_ivp.py\' not found', 'red'))
+        raise _error
+    except Exception as _error:
+        print(colored(f'Error, \'scipy_ivp.py\' failed to load', 'red'))
+        raise _error
+except Exception as _error:
+    print(colored(f'Error, \'scipy_ivp.py\' failed to load', 'red'))
+    raise _error
 
 """________________________________General________________________________"""
 
@@ -115,7 +130,7 @@ if par.indexOfWater == -1:
 print(f'model: {par.model}')
 print(f'target specie: {target_specie}')
 print(f'excitation: {excitation_type} (control parameters: {excitation_args})')
-print(f'enable heat transfer: {_colorTF(enable_heat_transfer)}\tenable evaporation: {_colorTF(enable_evaporation)}\tenable reactions: {_colorTF(enable_reactions)}\tenable dissipated energy: {_colorTF(enable_dissipated_energy)}\tenable reaction rate threshold: {_colorTF(enable_reaction_rate_threshold)}\tenable_time_evaluation_limit: {_colorTF(enable_time_evaluation_limit)}')
+print(f'enable heat transfer: {_colorTF(enable_heat_transfer)}\tenable evaporation: {_colorTF(enable_evaporation)}\tenable reactions: {_colorTF(enable_reactions)}\tenable dissipated energy: {_colorTF(enable_dissipated_energy)}')
 if target_specie not in par.species:
     print(colored(f'Error, target specie \'{target_specie}\' not found in parameters.py', 'red'))
 
@@ -125,12 +140,12 @@ if target_specie not in par.species:
 cpar_rules = dict(
     ID =         dict(default=0,                      type=int,           range=[0, 10**15],              comment='ID of control parameter (not used during calculation)'),
 # Initial conditions:
-    R_E =        dict(default=10.0e-6,                type=float,         range=[1e-9, 1.0e3],             comment='bubble equilibrium radius [m]'),
+    R_E =        dict(default=10.0e-6,                type=float,         range=[1e-9, 1e-2],             comment='bubble equilibrium radius [m]'),
     ratio =      dict(default=1.0,                    type=float,         range=[1.0, 1000.0],            comment='initial radius / equilibrium radius R_0/R_E [-]'),
     gases =      dict(default=[0],                    type=(list, int),   range=[0, par.K-1],             comment='indexes of species in initial bubble (list of species indexes)'),
     fractions =  dict(default=[1.0],                  type=(list, float), range=[0.0, 1.0],               comment='molar fractions of species in initial bubble (list of fractions for every gas)'),
 # Ambient parameters:
-    P_amb =      dict(default=1.0*par.atm2Pa,         type=float,         range=[0.0, 1.0e10*par.atm2Pa], comment='ambient pressure [Pa]'),
+    P_amb =      dict(default=1.0*par.atm2Pa,         type=float,         range=[0.0, 1000.0*par.atm2Pa], comment='ambient pressure [Pa]'),
     T_inf =      dict(default=20.0+par.absolute_zero, type=float,         range=[0.0, 100000.0],          comment='ambient temperature [K]'),
 # Liquid parameters:
     alfa_M =     dict(default=par.alfa_M,             type=float,         range=[0.0, 10.0],              comment='water accommodation coefficient [-]'),
@@ -175,7 +190,7 @@ def check_cpar(cpar):
                     print(colored(f'Error in cpar, key \'{key}\' has wrong type. Expected {list_type.__name__}, recieved {type(cpar[key]).__name__}: cpar.{key} = {cpar[key]}', 'red'))
                     return False
             if len(cpar[key]) == 0:   # check list length
-                print(colored(f'Error in cpar, key \'{key}\' is empty: cpar.{key} = {cpar[key]}', 'red'))
+                print(colored(f'Error in cpar, key \'{key}\' is zeros: cpar.{key} = {cpar[key]}', 'red'))
                 return False
             for i, element in enumerate(cpar[key]):
                 if type(element) != element_type:   # check element type
@@ -194,6 +209,7 @@ def check_cpar(cpar):
     if len(cpar['gases']) != len(cpar['fractions']):
         print(print(colored(f'Error in cpar, len(cpar.gases) != len(cpar.fractions): {cpar["gases"]} != {cpar["fractions"]}', 'red')))
         return False
+    
     return True
     
 def example_cpar(normal_dict=False):
@@ -329,7 +345,7 @@ def _pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, args):
 # returns molar heat capacities, enthalpies and entropies
 @njit(float64[:, :](float64))
 def _thermodynamic(T):
-    ret = np.zeros((4, par.K), dtype=np.float64)   # [C_p, H, S, C_v]
+    ret = np.empty((4, par.K), dtype=np.float64)   # [C_p, H, S, C_v]
     for k in range(par.K):
     # get coefficients for T
         if T <= par.TempRange[k][2]: # T <= T_mid
@@ -398,8 +414,8 @@ def _evaporation(p, T, X_H2O, alfa_M, T_inf, P_v):
 
 """________________________________Reaction rates________________________________"""
 
-@njit(float64[:](float64, float64[:], float64, float64,float64))
-def _forward_rate(T, M_eff, M, p, reaction_rate_threshold):
+@njit(float64[:](float64, float64[:], float64, float64, float64))
+def _forward_rate(T, M_eff, M, p, reaction_rate_treshold):
 # Reaction rate
     k_forward = par.A * T ** par.b * np.exp(-par.E / (par.R_cal * T))
     
@@ -460,19 +476,18 @@ def _forward_rate(T, M_eff, M, p, reaction_rate_threshold):
             ln_k=np.log(k_upper)
         else:
             ln_k = np.log(k_lower) + (np.log(p) - np.log(par.Plog[lower][0])) / (np.log(par.Plog[upper][0]) - np.log(par.Plog[lower][0])) * (np.log(k_upper) - np.log(k_lower))
-            
+        
         k_forward[i] = np.exp(ln_k)
-
-        if(enable_reaction_rate_threshold):
-            for i in range(par.I):
-                if(abs(k_forward[i]) > reaction_rate_threshold):
-                    k_forward[i] = reaction_rate_threshold * np.sign(k_forward[i])
+            
+        for i in range(par.I):
+            if(abs(k_forward[i]) > reaction_rate_treshold):
+                k_forward[i] = reaction_rate_treshold * np.sign(k_forward[i])
     return k_forward
 
 
 @njit(float64[:](float64[:], float64[:], float64[:], float64, float64))
-def _backward_rate(k_forward, S, H, T, reaction_rate_threshold):
-    k_backward = np.zeros((par.I), dtype=np.float64)
+def _backward_rate(k_forward, S, H, T, reaction_rate_treshold):
+    k_backward = np.empty((par.I), dtype=np.float64)
     for i in range(par.I):
         DeltaS = 0.0
         DeltaH = 0.0
@@ -486,10 +501,9 @@ def _backward_rate(k_forward, S, H, T, reaction_rate_threshold):
     for i in par.IrreversibleIndexes:
         k_backward[i] = 0.0
     
-    if(enable_reaction_rate_threshold):
-        for i in range(par.I):
-            if(abs(k_backward[i]) > reaction_rate_threshold):
-                k_backward[i] = reaction_rate_threshold * np.sign(k_backward[i])
+    for i in range(par.I):
+        if(abs(k_backward[i]) > reaction_rate_treshold):
+            k_backward[i] = reaction_rate_treshold * np.sign(k_backward[i])
     return k_backward
 
 
@@ -501,12 +515,12 @@ def _production_rate(T, H, S, c, P_amb, p, M):
         for k in range(par.K):
             M_eff[j] += par.alfa[j][k] * c[k]
 # Forward and backward rates
-    reaction_rate_threshold = par.k_B * T / par.h
-    k_forward = _forward_rate(T=T, M_eff=M_eff, M=M, p=p, reaction_rate_threshold=reaction_rate_threshold)
-    k_backward = _backward_rate(k_forward=k_forward, S=S, H=H, T=T, reaction_rate_threshold=reaction_rate_threshold)
+    reaction_rate_treshold = par.k_B * T / par.h
+    k_forward = _forward_rate(T=T, M_eff=M_eff, M=M, p=p, reaction_rate_treshold=reaction_rate_treshold)
+    k_backward = _backward_rate(k_forward=k_forward, S=S, H=H, T=T, reaction_rate_treshold=reaction_rate_treshold)
 
 # Net rates
-    q = np.zeros((par.I), dtype = np.float64)
+    q = np.empty((par.I), dtype = np.float64)
     for i in range(par.I):
         forward = 1.0
         backward = 1.0
@@ -529,21 +543,19 @@ def _production_rate(T, H, S, c, P_amb, p, M):
 
 """________________________________Differential equation________________________________"""
 
-@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
-def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0): 
+@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
+def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args, extra_dims=0): 
     """ODE function for the bubble model. Returns the derivative of the state vector x at time t. 
     Use extra_dims to plot extra variables (e.g. energy) during the simulation. Will impact the performance."""
 
     R = x[0]      # bubble radius [m]
     R_dot = x[1]  # [m/s]
-    if (thermodynamicalcase<2):
-        R_dot = 0.0
     T = x[2]      # temperature [K]
     c = x[3:3+par.K]     # molar concentration [mol/cm^3]
     M = np.sum(c) # sum of concentration
     X = c / M     # mole fraction [-]
     p = 0.1 * M * par.R_erg * T # Partial pressure of the gases [Pa]
-    dxdt = np.zeros(x.shape, dtype = np.float64)
+    dxdt = np.empty(x.shape, dtype = np.float64)
     
 # d/dt R
     dxdt[0] = R_dot
@@ -586,12 +598,8 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodyna
         Q_r_dot -= omega_dot[k] * H[k]
     Q_r_dot += sum_omega_dot * par.R_erg * T
     T_dot = (Q_r_dot + 30.0 / R * (-p * R_dot + Q_th_dot + evap_energy)) / (M * C_v_avg)
-    if(thermodynamicalcase==1):
-        T_dot = 0.0
     p_dot = p * (sum_omega_dot / M + T_dot / T - 3.0 * R_dot / R) # for later use
     dxdt[2] = T_dot
-    if(thermodynamicalcase==1):
-        dxdt[2] = 0.0
 # d/dt R_dot
     (delta, delta_dot) = _pressure(t=t,
         R=R, R_dot=R_dot, mu_L=mu_L, surfactant=surfactant, rho_L=rho_L,
@@ -602,8 +610,6 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodyna
     Den = (1.0 - R_dot / c_L) * R + 4.0 * mu_L / (c_L * rho_L)
     
     dxdt[1] = Nom / Den
-    if (thermodynamicalcase<2):
-        dxdt[1] = 0.0
     
     if enable_dissipated_energy:
         V_dot=4.0 * R * R * R_dot * np.pi
@@ -621,13 +627,29 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodyna
             dxdt[3+par.K+1] = integrand_th
             dxdt[3+par.K+2] = integrand_v
             dxdt[3+par.K+3] = integrand_r
-            dxdt[3+par.K+4] = integrand_th + integrand_v + integrand_r 
+            dxdt[3+par.K+4] = integrand_th + integrand_v + integrand_r
+    
     return dxdt
 
 
 """________________________________Solving________________________________"""
 
-def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0, print_errors=False):
+# error codes description
+error_codes = { # this is also a dictionary
+    'xx0': dict(describtion='succecfully solved with LSODA solver', color='green'),
+    'xx1': dict(describtion='LSODA solver didn\'t converge', color='yellow'),
+    'xx2': dict(describtion='LSODA solver timed out', color='yellow'),
+    'xx3': dict(describtion='LSODA solver had a runtime error', color='yellow'),
+    'x0x': dict(describtion='succecfully solved with Radau solver', color='green'),
+    'x4x': dict(describtion='Radau solver didn\'t converge', color='yellow'),
+    'x5x': dict(describtion='Radau solver timed out', color='yellow'),
+    'x6x': dict(describtion='Radau solver had a runtime error', color='yellow'),
+    '1xx': dict(describtion='Low pressure error: The pressure of the gas is negative (NO SOLUTION!)', color='red'),
+    '2xx': dict(describtion='Low pressure warning: The pressure during the expansion is lower, than the saturated water pressure', color='yellow'),
+    '3xx': dict(describtion='Invalid control parameters (NO SOLUTION!)', color='red'),
+}
+
+def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0, print_errors=False, compression=0):
     """
     This funfction solves the differential equation, and returns the numerical solution.
     Parameters:
@@ -637,8 +659,11 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
      * Radau_timeout: timeout for Radau solver in seconds
      * extra_dims: add extra dimensions to the initial condition array (initial value: 0.0) | 
                    use it to plot extra variables (e.g. energy) during the simulation
-     * print_errors: if True, LSODA and Radau errors will be printed during fatal failiures. | 
-                     disable JIT to see the exact line the error occured
+     * print_errors: if True, LSODA and Radau errors will be printed.
+     * compression: the data compression of the ODE solution (num_sol.y):
+        * 0: no compression, every step is saved (default)
+        * 1: compression, about 1/10 of the steps are saved, but the solution's shape is preserved visually
+        * 2: only the first and last 2 steps are saved
 
     Returns:
      * num_sol: numerical solution. Use num_sol.t and num_sol.y to get the time and the solution. Can be None
@@ -651,98 +676,137 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
         
     error_code = 0
     start = time.time()
-    num_sol = None
+    num_sol1 = None
+    num_sol2 = None
     if not check_cpar(cpar):
         error_code += 300
+        if print_errors:
+            print(colored(error_codes['3xx']['describtion'], error_codes['3xx']['color']))
         return None, error_code, 0.0
     
+    # Arguments and IC for _f()
     ex_args = []
     for key in excitation_args:
         ex_args.append(cpar.get(key, 0.0))
     ex_args = np.array(ex_args, dtype=np.float64)
-
+    args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # _f()'s arguments
     IC, lowpressure_error, lowpressure_warning = _initial_condition(cpar, enable_evaporation, extra_dims)
     if lowpressure_error:
         error_code += 100
+        if print_errors:
+            print(colored(error_codes['1xx']['describtion'], error_codes['1xx']['color']))
         return None, error_code, 0.0
     elif lowpressure_warning:
         error_code += 200
-
+        if print_errors:
+            print(colored(error_codes['2xx']['describtion'], error_codes['2xx']['color']))
+    
     # solving d/dt x=f(t, x, cpar)
-    t_eval=np.array([t_int[0],t_int[1]])
-
+    # Try with LSODA
     try: # try-catch block
-        if(enable_time_evaluation_limit):
-            num_sol = func_timeout( # timeout block
-                LSODA_timeout, solve_ivp,
-                kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
-                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
-            ))
-        else:
-            num_sol = func_timeout( # timeout block
-                LSODA_timeout, solve_ivp,
-                kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
-                       args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments   
-            ))
-
-        if num_sol.success == False:
+        num_sol1 = func_timeout( # timeout block
+            LSODA_timeout, solve_ivp,
+            kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # _f()'s arguments
+            )
+        )
+        num_sol1.y=num_sol1.y.transpose()
+        if num_sol1.success == False:
             error_code += 1
             if print_errors:
-                print(colored(f'Error in solve(): LSODE didn\'t converge: ', 'yellow'), num_sol.message)
+                print(colored(f'Error in solve(): LSODE didn\'t converge: ', 'yellow'), num_sol1.message)
     except FunctionTimedOut:
         error_code += 2
     except Exception as error:
         error_code += 3
         if print_errors:
-            tb = error.__traceback__
             print(colored(f'Error in solve(): LSODE had a fatal error:', 'red'))
-            print(''.join(traceback.format_exception(error, error, tb, limit=10)))
+            tb=error.__traceback__
+            print(''.join(traceback.format_exception(error, error, tb, limit=5)))
     if error_code % 10 != 0:
         try: # try-catch block
-            if(enable_time_evaluation_limit):
-                num_sol = func_timeout( # timeout block
-                    Radau_timeout, solve_ivp, 
-                    kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
-                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
-                ))
-            else:
-                num_sol = func_timeout( # timeout block
-                    Radau_timeout, solve_ivp, 
-                    kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
-                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
-                ))
-            if num_sol.success == False:
+            num_sol2 = func_timeout( # timeout block
+                Radau_timeout, solve_ivp, 
+                kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
+                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, ex_args, extra_dims) # _f()'s arguments
+                )
+            )
+            num_sol2.y=num_sol2.y.transpose()
+            if num_sol2.success == False:
                 error_code += 40
                 if print_errors:
-                    print(colored(f'Error in solve(): Radau didn\'t converge: ', 'yellow'), num_sol.message)
+                    print(colored(f'Error in solve(): Radau didn\'t converge: ', 'yellow'), num_sol2.message)
         except FunctionTimedOut:
             error_code += 50
         except Exception as error:
             error_code += 60
+            tb=error.__traceback__
             if print_errors:
-                tb = error.__traceback__
                 print(colored(f'Error in solve(): Radau had a fatal error:', 'red'))
-                print(''.join(traceback.format_exception(error, error, tb, limit=10)))
+                print(''.join(traceback.format_exception(error, error, tb, limit=5)))         
+        
+        #scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='LSODA', timeout=LSODA_timeout, args=args,
+                                   #use_builtin_jac=False, compression=compression, atol=1e-10, rtol=1e-10)
+        #if num_sol1.success == False:
+        #    if 'Runtime error' in num_sol1.message:
+        #        error_code += 3
+        #        if print_errors:
+        #            print(colored(error_codes['xx3']['describtion'], error_codes['xx3']['color']) + ': ' + num_sol1.message)
+        #            print(num_sol1.details)
+        #    elif 'timed out' in num_sol1.message:
+        #        error_code += 2
+        #        if print_errors:
+        #            print(colored(error_codes['xx2']['describtion'], error_codes['xx2']['color']) + ': ' + num_sol1.message)
+        #    else:   # Convergence error
+        #        error_code += 1
+        #        if print_errors:
+        #            print(colored(error_codes['xx1']['describtion'], error_codes['xx1']['color']) + ': ' + num_sol1.message)
+
+        # Try with Radau
+        #num_sol2 = scipy_ivp.solve_ivp(fun=_f, t_span=t_int, y0=IC, method='Radau', timeout=Radau_timeout, args=args,
+                                       #use_builtin_jac=False, compression=compression, atol = 1e-10, rtol=1e-10)
+        #num_sol2.y=num_sol2.y.transpose()
+        #if num_sol2.success == False:            
+        #    if 'Runtime error' in num_sol2.message:
+        #        error_code += 60
+        #        if print_errors:
+        #            print(colored(error_codes['x6x']['describtion'], error_codes['x6x']['color']) + ': ' + num_sol2.message)
+        #            print(num_sol2.details)
+        #    elif 'timed out' in num_sol2.message:
+        #        error_code += 50
+        #        if print_errors:
+        #            print(colored(error_codes['x5x']['describtion'], error_codes['x5x']['color']) + ': ' + num_sol2.message)
+        #    else:   # Convergence error
+        #        error_code += 40
+        #        if print_errors:
+        #            print(colored(error_codes['x4x']['describtion'], error_codes['x4x']['color']) + ': ' + num_sol2.message)
+        #else:
+        #    if print_errors:
+        #        print(colored(error_codes['x0x']['describtion'], error_codes['x0x']['color']))
+    #else:
+        #if print_errors:
+            #print(colored(error_codes['xx0']['describtion'], error_codes['xx0']['color']))
     
     end = time.time()
     elapsed_time = (end - start)
     
-    return num_sol, error_code, elapsed_time
+    if num_sol1 is not None:
+        if num_sol1.success:
+            return num_sol1, error_code, elapsed_time
+        else:
+            if num_sol2 is not None:
+                if num_sol1.t[-1] > num_sol2.t[-1]:
+                    return num_sol1, error_code, elapsed_time
+                else:
+                    return num_sol2, error_code, elapsed_time
+            else:
+                return None, error_code, elapsed_time
+    else:
+        if num_sol2 is not None and 't' in num_sol2: 
+            return num_sol2, error_code, elapsed_time
+        else:
+            return None, error_code, elapsed_time
 
-# error codes description
-error_codes = { # this is also a dictionary
-    'xx0': dict(describtion='succecfully solved with LSODA solver', color='green'),
-    'xx1': dict(describtion='LSODA solver didn\'t converge', color='yellow'),
-    'xx2': dict(describtion='LSODA solver timed out', color='yellow'),
-    'xx3': dict(describtion='LSODA solver had a fatal error', color='yellow'),
-    'x0x': dict(describtion='succecfully solved with Radau solver', color='green'),
-    'x4x': dict(describtion='Radau solver didn\'t converge (NO SOLUTION!)', color='red'),
-    'x5x': dict(describtion='Radau solver timed out (NO SOLUTION!)', color='red'),
-    'x6x': dict(describtion='Radau solver had a fatal error (NO SOLUTION!)', color='red'),
-    '1xx': dict(describtion='Low pressure error: The pressure of the gas is negative', color='red'),
-    '2xx': dict(describtion='Low pressure warning: The pressure during the expansion is lower, than the saturated water pressure', color='yellow'),
-    '3xx': dict(describtion='Invalid control parameters', color='red'),
-}
 
 def get_errors(error_code, printit=False):
     """
@@ -786,7 +850,6 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     Returns:
      * data: dotdict with the post processing data (e.g. collapse time, energy demand, etc.)
     """
-
     if type(cpar) == dict:
         cpar = dotdict(cpar)
     # copy cpar:
@@ -814,16 +877,17 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     
     # default values
     data.steps = 0
-    #data.collapse_time = 0.0
-    #data.T_max = 0.0
+    data.collapse_time = 0.0
+    data.T_max = 0.0
     data.x_initial = np.zeros((4+par.K), dtype=np.float64)
     data.x_final = np.zeros((4+par.K), dtype=np.float64)
+    data.t_final = 0.0
     data[f'n_{target_specie}'] = 0.0
     data.m_target = 0.0
     data.expansion_work = 0.0
     data.dissipated_acoustic_energy = 0.0
-    data.energy_demand = 1.0e30
-    data.energy_efficiency = 1.0e30 # legacy for data.energy_demand
+    data.energy_demand = 0.0#1.0e30
+    data.energy_efficiency = 0.0#1.0e30 # legacy for data.energy_demand
     data.enable_heat_transfer = enable_heat_transfer
     data.enable_evaporation = enable_evaporation
     data.enable_reactions = enable_reactions
@@ -832,35 +896,51 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.target_specie = target_specie
     errors, success = get_errors(error_code)
     data.success = success
+    data.nstep = 0
+    data.saved_steps = 0
+    data.nfev = 0
+    data.njac = 0
+    data.nlu = 0
+    data.message = 'No data available.'
     if num_sol is None:
         return data
     
     # normal functioning
-    data.steps = len(num_sol.t)
-    data.x_initial = num_sol.y[:, 0] # initial values of [R, R_dot, T, c_1, ... c_K]
-    # collapse time (first loc min of R)    TODO fix
-    #loc_min = argrelmin(num_sol.y[:][0])
-    #data.collapse_time = 0.0
-    #if not len(loc_min[0]) == 0:
-    #    data.collapse_time = num_sol.t[loc_min[0][0]]
+    data.steps = getattr(num_sol, 'nstep', 0)
+    data.x_initial = num_sol.y[0] # initial values of [R, R_dot, T, c_1, ... c_K]
+    #data.collapse_time = getattr(num_sol, 'collapse_time', 0.0) # [s]
+    loc_min = argrelmin(num_sol.y[:,0])
+    data.collapse_time = 0.0
+    if not len(loc_min[0]) == 0:
+        data.collapse_time = num_sol.t[loc_min[0][0]]
+    #data.T_max = getattr(num_sol, 'T_max', 0.0) # maximum of temperature peaks [K]
+    data.T_max = np.max(num_sol.y[:,2]) # maximum of temperature peaks [K]
+    data.nstep = getattr(num_sol, 'nstep', 0)
+    data.saved_steps = len(num_sol.t)
+    data.nfev = getattr(num_sol, 'nfev', 0)
+    data.njac = getattr(num_sol, 'njac', 0)
+    data.nlu = getattr(num_sol, 'nlu', 0)
+    data.message = getattr(num_sol, 'message', 0).replace('\n', ' ').replace(',', ' ').replace(';', ' ')
         
-    # Energy calculations
-    #data.T_max = np.max(num_sol.y[2,:]) # maximum of temperature peaks [K]
-    data.x_final = num_sol.y[:,-1] # final values of [R, R_dot, T, c_1, ... c_K]
+    # energy calculations
+    data.x_final = num_sol.y[-1] # final values of [R, R_dot, T, c_1, ... c_K]
+    if not all(np.isfinite(data.x_final)) and len(num_sol.y > 2):
+        data.x_final = num_sol.y[-2]
+    data.t_final = num_sol.t[-1] # [s]
     last_V = 4.0 / 3.0 * (100.0 * data.x_final[0]) ** 3 * np.pi # [cm^3]
     data[f'n_{target_specie}'] = data.x_final[3+par.index[target_specie]] * last_V # [mol]
     m_target = 1.0e-3 * data[f'n_{target_specie}'] * par.W[par.index[target_specie]] # [kg]
     data.expansion_work = _work(cpar, enable_evaporation) # [J]
     data.dissipated_acoustic_energy = data.x_final[3+par.K]  # [J]
     all_work = data.expansion_work + data.dissipated_acoustic_energy
-    data.energy_demand = 1.0e-6 * all_work / m_target if m_target > 0.0 else 1.0e30 # [MJ/kg]
+    data.energy_demand = 1.0e-6 * all_work / m_target if m_target > 0.0 else 0.0#1.0e30 # [MJ/kg]
     data.energy_efficiency = data.energy_demand # legacy for data.energy_demand
     data.target_specie = target_specie
     return data
 
 # keys of data: (except x_final and x_initial)
 keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'rho_L', 'gases', 'fractions', 'surfactant', 'c_L',
-        'error_code', 'success', 'elapsed_time', 'steps', #'collapse_time', 'T_max', 
+        'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', 'nstep', 'saved_steps', 'nfev', 'njac', 'nlu', 'message',
         f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_demand',
         'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
 
@@ -902,7 +982,7 @@ def _print_line(name, value, comment, print_it=False):
     else:
         return f'{text: <48} # {comment}\n'
 
-def print_cpar(cpar, without_code=False, print_it=True):
+def print_cpar(cpar, without_code=True, print_it=True):
     """Prints the control parameters (cpar) in an organised way. Arguments:
      * cpar: control parameters (dict or dotdict)
      * without_code: if True, an easier to read version is printed. If False, then the result is a valid python code
@@ -952,21 +1032,20 @@ def print_data(cpar, data, print_it=True):
     text += f'''\nSimulation info:
     error_code ={data.error_code: .0f} (success = {data.success})
     elapsed_time ={data.elapsed_time: .2f} [s]
-    steps ={data.steps: .0f} [-]'''
+    nstep = {data.nstep};   saved_steps = {data.saved_steps};   nfev = {data.nfev};   njac = {data.njac};   nlu = {data.nlu}'''
     
-    text += f'''\nFinal state:
+    text += f'''\n\nFinal state:
     R_final ={1e6*data.x_final[0]: .2f} [um];   R_dot_final ={data.x_final[1]} [m/s];   T_final ={data.x_final[2]: .2f} [K]
-    n_{target_specie}_final ={data[f'n_{target_specie}']: .2e} [mol]
+    n_{target_specie}_final ={data[f'n_{target_specie}']: .2e} [mol];   t_final ={data.t_final: .6e} [s]
     Final molar concentrations: [mol/cm^3]\n        '''
     
     for k, specie in enumerate(par.species):
         text += f'{specie: <6}: {data.x_final[3+k]: 12.6e};    '
         if (k+1) % 4 == 0: text += f'\n        '
     
-    text += f'''\nResults:'''
-    #collapse_time = {data.collapse_time: .6e} [s]
-    #T_max ={data.T_max: .2f} [K]
-    text +=f'''
+    text += f'''\nResults:
+    collapse_time = {data.collapse_time: .6e} [s]
+    T_max ={data.T_max: .2f} [K]
     expansion work = {data.expansion_work: .6e} [J]
     dissipated acoustic energy = {data.dissipated_acoustic_energy: .6e} [J]
     energy demand = {data.energy_demand: .2f} [MJ/kg of {target_specie}]'''
@@ -980,15 +1059,15 @@ def simulate(kwargs):
     """This function runs solve() and get_data(), then return with data. 
     Input and output is (or can be) normal dictionary. 
     It is used for multithreading (e.g. in Bruteforce_parameter_sweep.ipynb). 
-    The input (kwargs) is a dictionary with the keyword-argument pairs of solve().  
+    The input (kwargs) is a dictionary with the keyword-argument pairs of solve().
     """
 
-    args = dict(t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0)
+    args = dict(t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0, compression=2)
     for key in kwargs:
         args[key] = kwargs[key]
     args = dotdict(args)
     cpar = dotdict(args.cpar)
-    num_sol, error_code, elapsed_time = solve(cpar, args.t_int, LSODA_timeout=args.LSODA_timeout, Radau_timeout=args.Radau_timeout, extra_dims=args.extra_dims)
+    num_sol, error_code, elapsed_time = solve(cpar, args.t_int, LSODA_timeout=args.LSODA_timeout, Radau_timeout=args.Radau_timeout, extra_dims=args.extra_dims, compression=args.compression)
     data = get_data(cpar, num_sol, error_code, elapsed_time)
     return dict(data)
 
@@ -1032,46 +1111,46 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
 # Solve
     if type(cpar) == dict:
         cpar = dotdict(cpar)
-
-    num_sol, error_code, elapsed_time = solve(cpar, t_int, LSODA_timeout, Radau_timeout, extra_dims, print_errors=True)
+    compression = 1 if base_name == '' else 0
+    num_sol, error_code, elapsed_time = solve(cpar, t_int, LSODA_timeout, Radau_timeout, extra_dims, print_errors=True, compression=compression)
     data = get_data(cpar, num_sol, error_code, elapsed_time)
     
 # Print errors
-    errors, success = get_errors(error_code, printit=True)
+    errors, success = get_errors(error_code, printit=False)
     if num_sol is None:
         print_data(cpar, data)
         return None
     
 # Calculations
-    #if t_int[1] != 1.0 or not success:
-    if(True):
+    t_last = n * data.collapse_time
+    if t_last < 1e-6 or t_int[1] < t_last or t_int[1] != 1.0 or not success:
         end_index = -1
-    #else:
-    #    end_index = np.where(num_sol.t > n * data.collapse_time)[0][0]
+    else:
+        end_index = np.where(num_sol.t >= t_last)[0][0]
 
     if num_sol.t[end_index] < 1e-3:
         t = num_sol.t[:end_index] * 1e6 # [us]
     else:
         t = num_sol.t[:end_index] * 1e3 # [ms]
-    R = num_sol.y[0, :end_index] # [m]
-    R_dot = num_sol.y[1, :end_index] # [m/s]
-    T = num_sol.y[2, :end_index] # [K]
-    c = num_sol.y[3:3+par.K, :end_index] # [mol/cm^3]
+    R = num_sol.y[:end_index, 0] # [m]
+    R_dot = num_sol.y[:end_index, 1] # [m/s]
+    T = num_sol.y[:end_index, 2] # [K]
+    c = num_sol.y[:end_index, 3:3+par.K] # [mol/cm^3]
 
     V = 4.0 / 3.0 * (100.0 * R) ** 3 * np.pi # [cm^3]
-    n = c * V
+    n = c.T * V
     if plot_pressure:
         internal_pressure = np.sum(n, axis=0) * par.R_g * T / V # [MPa]
     if plot_extra:
-        if len(num_sol.y[:, 0]) != 4+par.K+extra_dims or extra_dims != len(extra_dim_labels):
+        if len(num_sol.y[0]) != 4+par.K+extra_dims or extra_dims != len(extra_dim_labels):
             print(colored('Error! The number of extra dimensions is incorrect. ', 'red'))
-            #print(f'Number of dimensions: {len(num_sol.y[:, 0])=}')
-            #print(f'Number of dimensions should be: {4+par.K+extra_dims=}')
-            #print(f'Number of extra dimensions: {extra_dims=}')
-            #print(f'Number of extra dimension labels: {len(extra_dim_labels)=}')
+            print(f'Number of dimensions: {len(num_sol.y[0])=}')
+            print(f'Number of dimensions should be: {4+par.K+extra_dims=}')
+            print(f'Number of extra dimensions: {extra_dims=}')
+            print(f'Number of extra dimension labels: {len(extra_dim_labels)=}')
             print_data(cpar, data)
             return None
-        extra_plots = num_sol.y[3+par.K : 4+par.K+extra_dims, :end_index]
+        extra_plots = num_sol.y[:end_index, 3+par.K : 4+par.K+extra_dims]
 
 # plot R and T
     linewidth = 2.0 if presentation_mode else 1.0
@@ -1214,7 +1293,7 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
         linewidth = 2.0 if presentation_mode else 1.0
         fig4 = plt.figure(figsize=(16, 9) if presentation_mode else (20, 6))
         ax = fig4.add_subplot(axisbelow=True)
-        for extra_dim_label, extra_plot in zip(extra_dim_labels, extra_plots):
+        for extra_dim_label, extra_plot in zip(extra_dim_labels, extra_plots.T):
             ax.plot(t, extra_plot, label=extra_dim_label, linewidth=linewidth)
 
         if num_sol.t[end_index] < 1e-3:
@@ -1373,7 +1452,7 @@ class Make_dir:
             print(colored(f'Error, file \'{file}\' already exists. ', 'red'))
             return None
         # create header
-        #file.write(get_settings_and_info())
+        file.write(get_settings_and_info())
         # write string
         file.write(string)
         file.close()

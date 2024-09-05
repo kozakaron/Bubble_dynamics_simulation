@@ -3,7 +3,7 @@
 
 This document is automatically generated from in code documentation. (multiline comments under function headers) 
 
-Date of generation: 2024.04.02 19:21:16 (YYYY.MM.DD HH:MM:SS) 
+Date of generation: 2024.02.06 15:50:10 (YYYY.MM.DD HH:MM:SS) 
 ## Table of contents
 
 0. [**inp_data_extractor.py**](#bookmark_inp_data_extractor)
@@ -180,7 +180,6 @@ External dependencies:
  * psutil
  * socket
  * time
- * traceback
 
 ### Classes
 
@@ -285,17 +284,6 @@ External dependencies:
 
 	~~~
 	Legacy function, use viscosity(T) instead
-	~~~
-
-* **check_cpar**
-
-	~~~Python
-	def check_cpar(cpar)
-	~~~
-
-	~~~
-	Checks the existence, type, and value of each required cpar keys according to cpar_rules. Prints colored error messages.
-	Returns True if cpar is correct, False otherwise. Input: cpar - dict or dotdict of control parameters.
 	~~~
 
 * **copy**
@@ -435,7 +423,7 @@ External dependencies:
 * **solve**
 
 	~~~Python
-	def solve(cpar, t_int=[0. 1.], LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0, print_errors=False)
+	def solve(cpar, t_int=[0. 1.], LSODA_timeout=30.0, Radau_timeout=300.0, extra_dims=0)
 	~~~
 
 	~~~
@@ -447,8 +435,6 @@ External dependencies:
 	 * Radau_timeout: timeout for Radau solver in seconds
 	 * extra_dims: add extra dimensions to the initial condition array (initial value: 0.0) | 
 	               use it to plot extra variables (e.g. energy) during the simulation
-	 * print_errors: if True, LSODA and Radau errors will be printed during fatal failiures. | 
-	                 disable JIT to see the exact line the error occured
 	
 	Returns:
 	 * num_sol: numerical solution. Use num_sol.t and num_sol.y to get the time and the solution. Can be None
@@ -480,7 +466,6 @@ External dependencies:
 ### Global variables
 
 Actual values might differ
- * **cpar_rules**: *dict* = `{'ID': {'default': 0, 'type': <class 'int'>, 'range': [0, 1000000000000000], 'co...`
  * **enable_dissipated_energy**: *bool* = `True`
  * **enable_evaporation**: *bool* = `False`
  * **enable_heat_transfer**: *bool* = `True`
