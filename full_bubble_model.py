@@ -25,10 +25,10 @@ Usage:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = False
+enable_evaporation = True
 enable_reactions = True
 enable_dissipated_energy = False
-enable_reaction_rate_threshold = False
+enable_reaction_rate_threshold = True
 enable_time_evaluation_limit = False
 target_specie = 'NH3' # Specie to calculate energy demand for
 excitation_type = 'no_excitation' # function to calculate pressure excitation (see excitation.py for options)
@@ -359,40 +359,55 @@ def _thermodynamic(T):
 
 """________________________________Evaporation________________________________"""
 
-@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64))
-def _evaporation(p, T, X_H2O, alfa_M, T_inf, P_v):
+@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64, float64, float64, float64, float64))
+def _evaporation(p, T, X_H2O, H_steam, alfa_M, T_inf, P_v, C_4_starred, C_p_water, J2erg):
 # condensation and evaporation
     p_H2O = X_H2O * p
-    n_eva_dot = 1.0e3 * alfa_M * P_v / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T_inf))
-    n_con_dot = 1.0e3 * alfa_M * p_H2O / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T))
-    n_net_dot = n_eva_dot - n_con_dot
+    #Old:
+    #n_eva_dot = 1.0e3 * alfa_M * P_v / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T_inf))
+    #n_con_dot = 1.0e3 * alfa_M * p_H2O / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T))
+    #n_net_dot = n_eva_dot - n_con_dot
+    m_net_dot =  p_H2O/(P_v  * (2.0*np.sqrt(np.pi) * (1.0-alfa_M)/alfa_M - C_4_starred)) * np.sqrt(2.0/par.R_v) * (P_v-p_H2O)/np.sqrt(T_inf) #kg/s
+    n_net_dot = m_net_dot * par.W[par.indexOfWater] / 1.0e3 #mol/s
+
+    #Old:
 # Molar heat capacity of water at constant volume (isochoric) [J/mol/K]
     # get coefficients for T
-    if T <= par.TempRange[par.indexOfWater][2]: # T <= T_mid
-        a = par.a_low[par.indexOfWater]
-    else:  # T_mid < T
-        a = par.a_high[par.indexOfWater]
+    #if T <= par.TempRange[par.indexOfWater][2]: # T <= T_mid
+    #    a = par.a_low[par.indexOfWater]
+    #else:  # T_mid < T
+    #    a = par.a_high[par.indexOfWater]
     # calculate sum
-    C_V = 0.0
-    for n in range(par.N): # [0, 1, 2, 3, 4]
-        C_V += a[n] * T**n
-    C_V = par.R_erg * (C_V - 1.0)
 
-    # get coefficients for T
-    if T_inf <= par.TempRange[par.indexOfWater][2]: # T_inf <= T_mid
-        a = par.a_low[par.indexOfWater]
-    else:  # T_mid < T_inf
-        a = par.a_high[par.indexOfWater]
-    # calculate sum
-    C_V_inf = 0.0
-    for n in range(par.N): # [0, 1, 2, 3, 4]
-        C_V_inf += a[n] * T_inf**n
-    C_V_inf = par.R_erg * (C_V_inf - 1.0)
-# Evaporation energy [J/mol]
-    e_eva = C_V_inf * T_inf * 1e-7
-    e_con = C_V * T * 1e-7
-    evap_energy = n_eva_dot * e_eva - n_con_dot * e_con    # [W/m^2]
+    #C_V = 0.0
+    #for n in range(par.N): # [0, 1, 2, 3, 4]
+    #    C_V += a[n] * T**n
+    #C_V = par.R_erg * (C_V - 1.0)
     
+    # get coefficients for T
+    #if T_inf <= par.TempRange[par.indexOfWater][2]: # T_inf <= T_mid
+    #    a = par.a_low[par.indexOfWater]
+    #else:  # T_mid < T_inf
+    #    a = par.a_high[par.indexOfWater]
+    
+    # calculate sum
+    #C_V_inf = 0.0
+    #for n in range(par.N): # [0, 1, 2, 3, 4]
+    #    C_V_inf += a[n] * T_inf**n
+    #C_V_inf = par.R_erg * (C_V_inf - 1.0)
+# Evaporation energy [J/mol]
+    #Old:
+    #e_eva = C_V_inf * T_inf * 1e-7
+    #e_con = C_V * T * 1e-7
+    #evap_energy = n_eva_dot * e_eva - n_con_dot * e_con    # [W/m^2]
+    
+    #print(m_net_dot)
+    #print(H_steam)
+    #print(C_p_water*(T_inf-273.15)*J2erg)
+    evap_energy = m_net_dot * (H_steam - C_p_water/1000.0*par.W[par.indexOfWater]*J2erg*(T_inf-273.15)) #T_ref=273.15 K where H_water = 0.0
+    #C_p_water: J/(kg*K) -> *1000.0/par.W[par.indexOfWater]: J/(mol*K) ->*J2erg: erg/(mol*K)
+    #print(evap_energy)
+    evap_energy=0.0
     return n_net_dot, evap_energy
 
 
@@ -574,7 +589,7 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodyna
     c_dot = omega_dot - c * 3.0 * R_dot / R
 # Evaporation
     if enable_evaporation:
-        n_net_dot, evap_energy = _evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], alfa_M=alfa_M, T_inf=T_inf, P_v=P_v)
+        n_net_dot, evap_energy = _evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], H_steam=H[par.indexOfWater], alfa_M=alfa_M, T_inf=T_inf, P_v=P_v, C_4_starred=par.C_4_starred, C_p_water=par.C_p_water, J2erg=par.J2erg)
         c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
     else:
         n_net_dot = evap_energy = 0.0
@@ -585,7 +600,8 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodyna
     for k in range(par.K):
         Q_r_dot -= omega_dot[k] * H[k]
     Q_r_dot += sum_omega_dot * par.R_erg * T
-    T_dot = (Q_r_dot + 30.0 / R * (-p * R_dot + Q_th_dot + evap_energy)) / (M * C_v_avg)
+    V = 4.0 * R**3.0 * np.pi/3.0
+    T_dot = (Q_r_dot + 30.0 / R * (-p * R_dot + Q_th_dot) + evap_energy/V)/ (M * C_v_avg)
     if(thermodynamicalcase==1):
         T_dot = 0.0
     p_dot = p * (sum_omega_dot / M + T_dot / T - 3.0 * R_dot / R) # for later use

@@ -159,17 +159,20 @@ physical_constants = dict(
     k_B = dict(value=None, comment='Boltzmann constant [J/K]'),
     R_v = dict(value=None, comment='Specific gas constant of water [J/kg/K]'),
     erg2J = dict(value=1e-7, comment='Conversion factor from erg to J'),
+    J2erg = dict(value=1e+7, comment='Conversion factor from J to erg'),
     cal2J = dict(value=4.184, comment='Conversion factor from cal to J'),
     atm2Pa = dict(value=101325.0, comment='Conversion factor from atm to Pa'),
     bar2Pa = dict(value=1.0e5, comment='Conversion factor from bar to Pa'),
     absolute_zero = dict(value=273.15, comment='Zero °C in Kelvin'),
+    C_4_starred = dict(value=-2.1412, comment='Constant to the evaporation model, [-]'),
+    C_p_water = dict(value=4182.0, comment='Specific heat at constant pressure of water [J/(kg*K)]'),
 )
 
 def calculate_missing_constants():
     physical_constants['k_B']['value'] = physical_constants['R_g']['value']/physical_constants['N_A']['value']
     physical_constants['R_erg']['value'] = round(physical_constants['R_g']['value'] / physical_constants['erg2J']['value'], 1)
     physical_constants['R_cal']['value'] = round(physical_constants['R_g']['value'] / physical_constants['cal2J']['value'], 6)
-    physical_constants['R_v']['value'] = round(1000.0 * physical_constants['R_g']['value'] / (2*W['H'] + W['O']), 6)
+    physical_constants['R_v']['value'] = round(1000.0 * physical_constants['R_g']['value'] / (2.0*W['H'] + W['O']), 6)
 
 valid_elements='''H, HE, LI, BE, B, C, N, O, F, NE, NA, MG, AL, SI, P, S, CL, AR, K, CA, SC, TI, V, CR, MN, FE, CO, NI, CU, ZN, GA,
 GE, AS, SE, BR, KR, RB, SR, Y, ZR, NB, MO, TC, RU, RH, PD, AG, CD, IN, SN, SB, TE, I, XE, CS, BA, LA, CE, PR, ND,
