@@ -342,18 +342,18 @@ REACTIONS MOLES KELVINS
 !!H+O2=O+OH                           1.0400E+14  0.00000      7692.21
 ! R0002
 !!O+H2=H+OH                           3.8180E+12  0.00000      3999.59
-DUPLICATE
+!!DUPLICATE
 ! R0003
 !!O+H2=H+OH                           8.7920E+14  0.00000      9646.72
-DUPLICATE
+!!DUPLICATE
 ! R0004
 !!H2+OH=H2O+H                         2.1600E+08  1.51000      1726.04
 ! R0005
 !!2OH=O+H2O                           2.0000E+07  1.65100       317.53
-DUPLICATE
+!!DUPLICATE
 ! R0006
 !!2OH=O+H2O                           2.6000E+11 -0.05700      -416.16
-DUPLICATE
+!!DUPLICATE
 ! R0007
 H2+M=2H+M                           4.5770E+19 -1.40000     52526.06
 H2/2.5000/ H2O/12.0000/ AR/0.0000/ HE/0.0000/ 
