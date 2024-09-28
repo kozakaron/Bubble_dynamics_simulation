@@ -25,7 +25,7 @@ Usage:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = True
+enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = True
 enable_reaction_rate_threshold = True
@@ -359,16 +359,19 @@ def _thermodynamic(T):
 
 """________________________________Evaporation________________________________"""
 
-@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64, float64, float64, float64, float64))
-def _evaporation(p, T, X_H2O, H_steam, alfa_M, T_inf, P_v, C_4_starred, C_p_water, J2erg):
+@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64))
+def _evaporation(p, T, X_H2O, H_steam, alfa_M, sigma_evap, Gamma, T_inf, P_v, C_4_starred, C_p_water, J2erg):
 # condensation and evaporation
     p_H2O = X_H2O * p
     #Old:
-    #n_eva_dot = 1.0e3 * alfa_M * P_v / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T_inf))
-    #n_con_dot = 1.0e3 * alfa_M * p_H2O / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T))
-    #n_net_dot = n_eva_dot - n_con_dot
-    m_net_dot =  p_H2O/(P_v  * (2.0*np.sqrt(np.pi) * (1.0-alfa_M)/alfa_M - C_4_starred)) * np.sqrt(2.0/par.R_v) * (P_v-p_H2O)/np.sqrt(T_inf) #kg/s
-    n_net_dot = m_net_dot * par.W[par.indexOfWater] / 1.0e3 #mol/s
+    
+    n_eva_dot = 1.0e3 * alfa_M * P_v / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T_inf))
+    n_con_dot = 1.0e3 * Gamma * alfa_M * p_H2O / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T))
+    n_net_dot = sigma_evap * (n_eva_dot - n_con_dot)
+    m_net_dot = n_net_dot * par.W[par.indexOfWater] / 1.0e3 #mol/s
+    
+    #m_net_dot =  p_H2O/(P_v  * (2.0*np.sqrt(np.pi) * (1.0-alfa_M)/alfa_M - C_4_starred)) * np.sqrt(2.0/par.R_v) * (P_v-p_H2O)/np.sqrt(T_inf) #kg/s
+    #n_net_dot = m_net_dot * par.W[par.indexOfWater] / 1.0e3 #mol/s
 
     #Old:
 # Molar heat capacity of water at constant volume (isochoric) [J/mol/K]
@@ -544,8 +547,8 @@ def _production_rate(T, H, S, c, P_amb, p, M):
 
 """________________________________Differential equation________________________________"""
 
-@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
-def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0): 
+@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
+def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0): 
     """ODE function for the bubble model. Returns the derivative of the state vector x at time t. 
     Use extra_dims to plot extra variables (e.g. energy) during the simulation. Will impact the performance."""
 
@@ -589,7 +592,7 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodyna
     c_dot = omega_dot - c * 3.0 * R_dot / R
 # Evaporation
     if enable_evaporation:
-        n_net_dot, evap_energy = _evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], H_steam=H[par.indexOfWater], alfa_M=alfa_M, T_inf=T_inf, P_v=P_v, C_4_starred=par.C_4_starred, C_p_water=par.C_p_water, J2erg=par.J2erg)
+        n_net_dot, evap_energy = _evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], H_steam=H[par.indexOfWater], alfa_M=alfa_M, Gamma=Gamma, sigma_evap=sigma_evap,T_inf=T_inf, P_v=P_v, C_4_starred=par.C_4_starred, C_p_water=par.C_p_water, J2erg=par.J2erg)
         c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
     else:
         n_net_dot = evap_energy = 0.0
@@ -692,13 +695,13 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
             num_sol = func_timeout( # timeout block
                 LSODA_timeout, solve_ivp,
                 kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
-                        args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
             ))
         else:
             num_sol = func_timeout( # timeout block
                 LSODA_timeout, solve_ivp,
                 kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
-                       args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments   
+                       args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments   
             ))
 
         if num_sol.success == False:
@@ -719,13 +722,13 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
                 num_sol = func_timeout( # timeout block
                     Radau_timeout, solve_ivp, 
                     kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
-                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
                 ))
             else:
                 num_sol = func_timeout( # timeout block
                     Radau_timeout, solve_ivp, 
                     kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
-                            args=(cpar.P_amb, cpar.alfa_M, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
                 ))
             if num_sol.success == False:
                 error_code += 40
@@ -812,6 +815,8 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
         ratio=cpar.ratio,
         P_amb=cpar.P_amb,
         alfa_M=cpar.alfa_M,
+        Gamma=cpar.Gamma,
+        sigma_evap=cpar.sigma_evap,
         T_inf=cpar.T_inf,
         P_v=cpar.P_v,
         mu_L=cpar.mu_L,
@@ -844,6 +849,8 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.enable_evaporation = enable_evaporation
     data.enable_reactions = enable_reactions
     data.enable_dissipated_energy = enable_dissipated_energy
+    data.enable_reaction_rate_threshold=enable_reaction_rate_threshold
+    data.enable_time_evaluation_limit = enable_time_evaluation_limit
     data.excitation_type = excitation_type
     data.target_specie = target_specie
     errors, success = get_errors(error_code)
@@ -875,7 +882,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     return data
 
 # keys of data: (except x_final and x_initial)
-keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'rho_L', 'gases', 'fractions', 'surfactant', 'c_L',
+keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'Gamma', 'sigma_evap', 'T_inf', 'P_v', 'mu_L', 'rho_L', 'gases', 'fractions', 'surfactant', 'c_L',
         'error_code', 'success', 'elapsed_time', 'steps', #'collapse_time', 'T_max', 
         f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_demand',
         'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
@@ -1297,6 +1304,8 @@ full_bubble_model settings:
     enable_evaporation = {enable_evaporation} 
     enable_reactions = {enable_reactions}
     enable_dissipated_energy = {enable_dissipated_energy}
+    enable_reaction_rate_threshold = {enable_reaction_rate_threshold}
+    enable_time_evaluation_limit = {enable_time_evaluation_limit}
     target_specie = \'{target_specie}\' # Specie to calculate energy effiqiency
     excitation_type = \'{excitation_type}\' # function to calculate pressure excitation
 '''

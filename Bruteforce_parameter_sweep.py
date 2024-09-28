@@ -81,7 +81,7 @@ ranges = dict(
     # Surface tension modifier [-]
     surfactant = [1.0],
     # water accommodation coefficient [-]
-    alfa_M = [0.99],
+    alfa_M = [0.35],
     #Dynamic viscosity of the liquid [Pa*s]
     mu_L = [0.001 * x for x in [1.0]],#,
     #Sound velocity in the liquid [m/s]
