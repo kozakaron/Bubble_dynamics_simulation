@@ -65,16 +65,16 @@ if already_imported: importlib.reload(de)   # reload changes you made
 ranges = dict(
   # Initial conditions:
     # bubble equilibrium radius [m]
-    R_E = [1.0e-6*x for x in np.logspace(0.0,4.0,num=201)],#
+    R_E = [1.0e-6*x for x in [10.0]],#[1.0e-6*x for x in np.logspace(0.0,4.0,num=201)],#
     # initial radius / equilibrium radius R_0/R_E [-]
-    ratio = [x for x in np.linspace(1.2,20,num=377)],#
+    ratio = [x for x in [1.0]],#[x for x in np.linspace(1.2,20,num=377)],#
   # Ambient parameters:
     # Standard pressure [Pa]
-	  P_standard=[101325.0], # [Pa]
+	P_standard=[101325.0], # [Pa]
 	# ambient pressure [Pa]
-    P_amb = [x * par.bar2Pa for x in [1.0]],#np.logspace(-1.0,8.0,101)], # [bar --> Pa]
+    P_amb = [x * par.bar2Pa for x in np.logspace(-1.0,8.0,101)], # [bar --> Pa]
     # ambient temperature [K]       
-    T_inf = [par.absolute_zero + x for x in [20.0]],#np.linspace(1000.0,5000.0,101)], #par.absolute_zero +  # [°C --> K]
+    T_inf = [par.absolute_zero + x for x in np.linspace(1000.0,5000.0,101)], #par.absolute_zero +  # [°C --> K]
 	# Molar fractions of species in the initial bubble (H2 and N2) [-]
     fractions = [[x,1.0-x] for x in [0.75]],# in np.linspace(0.4,0.85,num=10)],
   # Liquid parameters:
@@ -114,7 +114,7 @@ ranges = dict(
     # excitation duration in period times [-]
     n =  [1.00],
     #Thermodynamical case: Constant volume...
-    thermodynamicalcase = [2], #0 = 'NonIsothermal-ConstantVolume'
+    thermodynamicalcase = [0], #0 = 'NonIsothermal-ConstantVolume'
 )
 
 for key in de.excitation_args:
