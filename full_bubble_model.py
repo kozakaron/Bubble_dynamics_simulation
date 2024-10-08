@@ -24,14 +24,14 @@ Usage:
 
 """________________________________Settings________________________________"""
 
-enable_heat_transfer = True
+enable_heat_transfer = False
 enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = True
-enable_reaction_rate_threshold = True
+enable_reaction_rate_threshold = False
 enable_time_evaluation_limit = False
 target_specie = 'NH3' # Specie to calculate energy demand for
-excitation_type = 'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
+excitation_type = 'no_excitation' # function to calculate pressure excitation (see excitation.py for options)
 
 """________________________________Libraries________________________________"""
 
@@ -480,17 +480,20 @@ def _forward_rate(T, M_eff, M, p, reaction_rate_threshold):
             ln_k = np.log(k_lower) + (np.log(p) - np.log(par.Plog[lower][0])) / (np.log(par.Plog[upper][0]) - np.log(par.Plog[lower][0])) * (np.log(k_upper) - np.log(k_lower))
             
         k_forward[i] = np.exp(ln_k)
-
-        if(enable_reaction_rate_threshold):
-            for i in range(par.I):
-                if(abs(k_forward[i]) > reaction_rate_threshold):
-                    k_forward[i] = reaction_rate_threshold * np.sign(k_forward[i])
     return k_forward
 
 
-@njit(float64[:](float64[:], float64[:], float64[:], float64, float64))
-def _backward_rate(k_forward, S, H, T, reaction_rate_threshold):
+@njit(Tuple((float64[:],float64[:]))(float64[:], float64[:], float64[:], float64, float64, int64[:,:]))
+def _backward_rate(k_forward, S, H, T, reaction_rate_threshold, reaction_order):
     k_backward = np.zeros((par.I), dtype=np.float64)
+    K_c = np.zeros((par.I), dtype=np.float64)
+    
+    #Forward rate thresholding:
+    if(enable_reaction_rate_threshold):
+        for i in range(par.I):
+            if(abs(k_forward[i]) > reaction_rate_threshold * np.power(par.N_A,reaction_order[i, 0])):
+                k_forward[i] = reaction_rate_threshold * np.sign(k_forward[i])
+    
     for i in range(par.I):
         DeltaS = 0.0
         DeltaH = 0.0
@@ -498,18 +501,18 @@ def _backward_rate(k_forward, S, H, T, reaction_rate_threshold):
             DeltaS += par.nu[i][k] * S[k]
             DeltaH += par.nu[i][k] * H[k]
         K_p = np.exp(DeltaS / par.R_erg - DeltaH / (par.R_erg * T))
-        K_c = K_p * (par.atm2Pa * 10.0 / (par.R_erg * T)) ** np.sum(par.nu[i])
+        K_c[i] = K_p * (par.atm2Pa * 10.0 / (par.R_erg * T)) ** np.sum(par.nu[i])
         #K_c += (K_c == 0.0) * 1.0e-323  # MODIFIED
-        k_backward[i] = k_forward[i] / K_c
+        k_backward[i] = k_forward[i] / K_c[i]
     for i in par.IrreversibleIndexes:
         k_backward[i] = 0.0
     
-    if(enable_reaction_rate_threshold):
+    if(enable_reaction_rate_threshold): 
         for i in range(par.I):
-            if(abs(k_backward[i]) > reaction_rate_threshold):
+            if(abs(k_backward[i]) > reaction_rate_threshold * np.power(par.N_A,reaction_order[i, 0]) / K_c[i]):
                 k_backward[i] = reaction_rate_threshold * np.sign(k_backward[i])
-    return k_backward
-
+                k_forward[i] = K_c[i]*k_backward[i]
+    return k_forward,k_backward
 
 @njit(float64[:](float64, float64[:], float64[:], float64[:], float64, float64, float64))
 def _production_rate(T, H, S, c, P_amb, p, M):
@@ -521,7 +524,7 @@ def _production_rate(T, H, S, c, P_amb, p, M):
 # Forward and backward rates
     reaction_rate_threshold = par.k_B * T / par.h
     k_forward = _forward_rate(T=T, M_eff=M_eff, M=M, p=p, reaction_rate_threshold=reaction_rate_threshold)
-    k_backward = _backward_rate(k_forward=k_forward, S=S, H=H, T=T, reaction_rate_threshold=reaction_rate_threshold)
+    k_forward_limited,k_backward_limited = _backward_rate(k_forward=k_forward, S=S, H=H, T=T, reaction_rate_threshold=reaction_rate_threshold,reaction_order=par.reaction_order)
 
 # Net rates
     q = np.zeros((par.I), dtype = np.float64)
@@ -531,7 +534,7 @@ def _production_rate(T, H, S, c, P_amb, p, M):
         for k in range(par.K):
             forward *= c[k] ** par.nu_forward[i][k]
             backward *= c[k] ** par.nu_backward[i][k]
-        q[i] = k_forward[i] * forward - k_backward[i] * backward
+        q[i] = k_forward_limited[i] * forward - k_backward_limited[i] * backward
 # Third body reactions
     for j, i in enumerate(par.ThirdBodyIndexes):    # i is the number of reaction, j is the index of i in par.ThirdBodyIndexes
         if i not in par.PressureDependentIndexes:
@@ -979,7 +982,7 @@ def print_data(cpar, data, print_it=True):
     
     text += f'''\nFinal state:
     R_final ={1e6*data.x_final[0]: .2f} [um];   R_dot_final ={data.x_final[1]} [m/s];   T_final ={data.x_final[2]: .2f} [K]
-    n_{target_specie}_final ={data[f'n_{target_specie}']: .2e} [mol]
+    n_{target_specie}_final ={data[f'n_{target_specie}']: .6e} [mol]
     Final molar concentrations: [mol/cm^3]\n        '''
     
     for k, specie in enumerate(par.species):
