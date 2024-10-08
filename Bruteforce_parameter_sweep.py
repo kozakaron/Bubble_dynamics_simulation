@@ -65,23 +65,25 @@ if already_imported: importlib.reload(de)   # reload changes you made
 ranges = dict(
   # Initial conditions:
     # bubble equilibrium radius [m]
-    R_E = [1.0e-6*x for x in np.logspace(0.0,1.0,num=2)],#
+    R_E = [1.0e-6*x for x in np.logspace(0.0,4.0,num=201)],#
     # initial radius / equilibrium radius R_0/R_E [-]
-    ratio = [x for x in np.linspace(1.2,20,num=2)],#
+    ratio = [x for x in np.linspace(1.2,20,num=377)],#
   # Ambient parameters:
     # Standard pressure [Pa]
-    P_standard=[101325.0], # [Pa]
-    # ambient pressure [Pa]
+	  P_standard=[101325.0], # [Pa]
+	# ambient pressure [Pa]
     P_amb = [x * par.bar2Pa for x in [1.0]],#np.logspace(-1.0,8.0,101)], # [bar --> Pa]
     # ambient temperature [K]       
     T_inf = [par.absolute_zero + x for x in [20.0]],#np.linspace(1000.0,5000.0,101)], #par.absolute_zero +  # [°C --> K]
-    # Molar fractions of species in the initial bubble (H2 and N2) [-]
+	# Molar fractions of species in the initial bubble (H2 and N2) [-]
     fractions = [[x,1.0-x] for x in [0.75]],# in np.linspace(0.4,0.85,num=10)],
   # Liquid parameters:
     # Surface tension modifier [-]
     surfactant = [1.0],
-    # water accommodation coefficient [-]
+	# water accommodation coefficient [-]
     alfa_M = [0.35],
+    Gamma=[1.0], #[-]\n",
+    sigma_evap=[0.4], #[-]\n",
     #Dynamic viscosity of the liquid [Pa*s]
     mu_L = [0.001 * x for x in [1.0]],#,
     #Sound velocity in the liquid [m/s]
@@ -105,7 +107,7 @@ ranges = dict(
     pA2 = [0.0e5], 
     #Initial phase angle between the exciting pressure waves [rad]
     theta_phase = [0.1],
-    # excitation amplitude [Pa]
+	# excitation amplitude [Pa]
     p_A = [-x * par.bar2Pa for x in [0.0]],#np.linspace(1.0, 3.0, 50)], # [bar --> Pa]
     # excitation frequency [Hz]
     freq =  [20000.00],
@@ -133,16 +135,16 @@ cpars = []
 ID = 1
 for values in itertools.product(*ranges.values()):
     cpar = dict(zip(ranges.keys(), values))
-
+    
     cpar['ID'] = ID                      # ID of control parameter (not used during calculation)
     cpar['gases'] = [par.index['H2'], par.index['N2']]    # indexes of species in initial bubble (list of species indexes)
     if not 'fractions' in cpar:
         cpar['fractions'] = [0.75, 0.25]            # molar fractions of species in initial bubble (list of fractions for every gas)
     # Calculate pressure/temperature dependent parameters:
     if not 'mu_L' in cpar:
-        cpar['mu_L'] = de.viscosity(cpar['T_inf'])
+  	    cpar['mu_L'] = de.viscosity(cpar['T_inf'])
     if not 'P_v' in cpar:
-        cpar['P_v'] = de.vapour_pressure(cpar['T_inf'])
+  	    cpar['P_v'] = de.vapour_pressure(cpar['T_inf'])
     cpars.append(cpar)
     ID += 1
 
@@ -150,7 +152,7 @@ print(f'Assemble cpars: {time.time()-start:.2f} s')
 start = time.time()
 
 # Create input dictionary for de.simulate(), a list of dictionaries with cpar and other arguments
-kwargs_list = [dict(cpar=cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30, Radau_timeout=300) for cpar in cpars]
+kwargs_list = [dict(cpar=cpar, t_int=np.array([0.0, 1.0e4]), LSODA_timeout=30, Radau_timeout=300) for cpar in cpars]
 end = time.time()
 print(f'Assemble kwargs_list: {time.time()-start:.2f} s')
 
@@ -171,7 +173,8 @@ full_bubble_model settings:
     enable_evaporation = {de.enable_evaporation} 
     enable_reactions = {de.enable_reactions}
     enable_dissipated_energy = {de.enable_dissipated_energy}
-    enable_time_evaluation_limit: {de.enable_time_evaluation_limit}
+    enable_reaction_rate_threshold = {de.enable_reaction_rate_threshold}
+    enable_time_evaluation_limit = {de.enable_time_evaluation_limit}
     target_specie = \'{de.target_specie}\' # Specie to calculate energy effiqiency
     excitation_type = \'{de.excitation_type}\' # function to calculate pressure excitation
 
@@ -185,12 +188,12 @@ file.write_string(combined_str, 'brutefroce_parameter_sweep_settings')
 # use Pool(processes=cpu_count()-1) to limit number of threads being used.
 # use pool.imap(...) instead of pool.imap_unordered(...) to preserve order in which cpars was made
 
-max_lines = 20000    # maximum length of a CSV
+max_lines = 50000    # maximum length of a CSV
 best_energy_demand = 1e30
 
 start = time.time()
 file.new_file()
-with Pool(processes=target_free_cpus, maxtasksperchild=50) as pool:
+with Pool(processes=target_free_cpus, maxtasksperchild=10) as pool:
     results = pool.imap_unordered(de.simulate, kwargs_list)
 
     for data in results:
