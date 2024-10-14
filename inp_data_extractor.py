@@ -209,6 +209,7 @@ def _get_elements(lines):
 
     i = _find('ELEM', lines)
     elements = []
+    
     while not 'END' in lines[i]:
         line = lines[i]
         line = line.replace('ELEMENTS', '')
@@ -226,7 +227,7 @@ def _get_elements(lines):
                 if element.replace('/', '').replace('+', '', 2).replace('-', '', 2).replace('.', '', 1).replace('E', '', 1).isnumeric(): continue
                 print(colored(f'Warning, element \'{element}\' is not recognised, it won\'t be, included', 'yellow')) 
         i += 1
-    
+        
     return elements
 
 """________________________________Species data________________________________"""
@@ -237,6 +238,8 @@ def _get_species(lines, elements):
   # Get species
     i = _find('SPEC', lines)
     species = []
+    ordinal_numbers_of_elements =[]
+    element_ordinal_number = 0
     while not 'END' in lines[i]:
         line = lines[i]
         line = line.replace('SPECIES', '')
@@ -272,6 +275,7 @@ def _get_species(lines, elements):
                 if specie[1] in digits:
                     components[i][elements.index(specie[0])] += int(specie[1])
                     specie = specie[2:]
+                    
                 else:
                     components[i][elements.index(specie[0])] += 1
                     specie = specie[1:]
@@ -283,7 +287,13 @@ def _get_species(lines, elements):
         for element, num in zip(elements, components[i]):
             w += num * data.W[element]
         W.append(round(w, 5)) 
-    return species, components, W, lambdas
+        
+    for k in range(len(species)):
+        for l in range(len(elements)):
+            if(species[k]==elements[l]):
+                 ordinal_numbers_of_elements.append(k)
+            
+    return species,ordinal_numbers_of_elements , components, W, lambdas
 
 """________________________________Thermodynamic data________________________________"""
 
@@ -640,7 +650,7 @@ def extract(path):
   # Extract data
     lines = _get_lines(text)
     elements = _get_elements(lines)
-    species, components, W, lambdas = _get_species(lines, elements)
+    species,ordinal_numbers_of_elements , components, W, lambdas = _get_species(lines, elements)
     TempRange, a_low, a_high = _get_thermo(lines, species)
     (reactions, A, B, E,
         ThirdBodyIndexes, alfa,
@@ -674,6 +684,7 @@ def extract(path):
         max_len = 0
     else:
         max_len = 10
+    text += f'ordinal_numbers_of_elements = np.array({print_array(ordinal_numbers_of_elements, 0)})\n'
     text += f'species = np.array({print_array(species, 10, max_len=max_len)})\n\n'
     text += f'components = np.array({print_array(components, 10, max_len=max_len)})\n\n'
     text += f'# molar mass [g/mol]\n'
