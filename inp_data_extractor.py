@@ -282,9 +282,8 @@ def _get_species(lines, elements):
         w = 0.0
         for element, num in zip(elements, components[i]):
             w += num * data.W[element]
-        W.append(round(w, 5))
-        
-    return species, W, lambdas
+        W.append(round(w, 5)) 
+    return species, components, W, lambdas
 
 """________________________________Thermodynamic data________________________________"""
 
@@ -641,7 +640,7 @@ def extract(path):
   # Extract data
     lines = _get_lines(text)
     elements = _get_elements(lines)
-    species, W, lambdas = _get_species(lines, elements)
+    species, components, W, lambdas = _get_species(lines, elements)
     TempRange, a_low, a_high = _get_thermo(lines, species)
     (reactions, A, B, E,
         ThirdBodyIndexes, alfa,
@@ -676,6 +675,7 @@ def extract(path):
     else:
         max_len = 10
     text += f'species = np.array({print_array(species, 10, max_len=max_len)})\n\n'
+    text += f'components = np.array({print_array(components, 10, max_len=max_len)})\n\n'
     text += f'# molar mass [g/mol]\n'
     text += f'W = np.array([      {print_array(W, 10, max_len=max_len)[1:]}, dtype=np.float64)\n\n'
     text += f'# thermal conductivity [W / m / K]\n'
