@@ -24,14 +24,14 @@ Usage:
 
 """________________________________Settings________________________________"""
 
-enable_heat_transfer = False
+enable_heat_transfer = True
 enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = True
-enable_reaction_rate_threshold = False
+enable_reaction_rate_threshold = True
 enable_time_evaluation_limit = False
 target_specie = 'NH3' # Specie to calculate energy demand for
-excitation_type = 'no_excitation' # function to calculate pressure excitation (see excitation.py for options)
+excitation_type = 'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
 
 """________________________________Libraries________________________________"""
 
@@ -599,6 +599,10 @@ def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, mu_L, rho
         c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
     else:
         n_net_dot = evap_energy = 0.0
+        
+    #Check negative concentrations
+    #for k in range(par.K):
+    #    if(c_dot[k]<0 and aaaaaaaaa)
     dxdt[3:3+par.K] = c_dot
 # d/dt T
     sum_omega_dot = np.sum(omega_dot)
@@ -633,9 +637,9 @@ def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, mu_L, rho
         integrand_v = 16.0 * np.pi * mu_L * (R * R_dot*R_dot + R * R * R_dot * dxdt[1] / c_L)
         integrand_r = 4.0 * np.pi / c_L * R * R * R_dot * (R_dot * p + p_dot * R - 0.5 * rho_L * R_dot * R_dot * R_dot - rho_L * R * R_dot * dxdt[1])
 
-        dxdt[3+par.K] = integrand_th + integrand_v + integrand_r
+        dxdt[3+par.K+1] = integrand_th + integrand_v + integrand_r
     else:
-        dxdt[3+par.K] = 0.0
+        dxdt[3+par.K+1] = 0.0
 
 # PLOT EXTRA VARIABLES HERE
     if extra_dims > 0:  # You might change this to plot whatever your heart desires
@@ -693,17 +697,18 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
     # solving d/dt x=f(t, x, cpar)
     t_eval=np.array([t_int[0],t_int[1]])
 
+    first_step=1.0e-7
     try: # try-catch block
         if(enable_time_evaluation_limit):
             num_sol = func_timeout( # timeout block
                 LSODA_timeout, solve_ivp,
-                kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
+                kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
                         args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
             ))
         else:
             num_sol = func_timeout( # timeout block
                 LSODA_timeout, solve_ivp,
-                kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
+                kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments   
             ))
 
@@ -724,13 +729,13 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
             if(enable_time_evaluation_limit):
                 num_sol = func_timeout( # timeout block
                     Radau_timeout, solve_ivp, 
-                    kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
+                    kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
                         args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
                 ))
             else:
                 num_sol = func_timeout( # timeout block
                     Radau_timeout, solve_ivp, 
-                    kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, # solve_ivp()'s arguments
+                    kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
                         args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
                 ))
             if num_sol.success == False:
