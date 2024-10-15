@@ -25,7 +25,7 @@ Usage:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = True
+enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = True
 enable_reaction_rate_threshold = True
