@@ -79,7 +79,8 @@ except Exception as _error:
 
 
 """________________________________General________________________________"""
-
+previous_time = None
+        
 class dotdict(dict):
     """Dot notation access to dictionary attributes. 
     Instead of dictionary['key'] you can use dictionary.key"""
@@ -502,7 +503,7 @@ def _backward_rate(k_forward, S, H, T, reaction_rate_threshold, reaction_order):
             DeltaH += par.nu[i][k] * H[k]
         K_p = np.exp(DeltaS / par.R_erg - DeltaH / (par.R_erg * T))
         K_c[i] = K_p * (par.atm2Pa * 10.0 / (par.R_erg * T)) ** np.sum(par.nu[i])
-        #K_c += (K_c == 0.0) * 1.0e-323  # MODIFIED
+        K_c += (K_c == 0.0) * 1.0e-323  # MODIFIED
         k_backward[i] = k_forward[i] / K_c[i]
     for i in par.IrreversibleIndexes:
         k_backward[i] = 0.0
@@ -516,6 +517,7 @@ def _backward_rate(k_forward, S, H, T, reaction_rate_threshold, reaction_order):
 
 @njit(float64[:](float64, float64[:], float64[:], float64[:], float64, float64, float64))
 def _production_rate(T, H, S, c, P_amb, p, M):
+    
 # Third body correction factors
     M_eff = np.zeros((par.ThirdBodyCount), dtype = np.float64)   # effective total concentration of the third-body 
     for j, i in enumerate(par.ThirdBodyIndexes):
@@ -534,6 +536,7 @@ def _production_rate(T, H, S, c, P_amb, p, M):
         for k in range(par.K):
             forward *= c[k] ** par.nu_forward[i][k]
             backward *= c[k] ** par.nu_backward[i][k]
+                
         q[i] = k_forward_limited[i] * forward - k_backward_limited[i] * backward
 # Third body reactions
     for j, i in enumerate(par.ThirdBodyIndexes):    # i is the number of reaction, j is the index of i in par.ThirdBodyIndexes
@@ -543,8 +546,15 @@ def _production_rate(T, H, S, c, P_amb, p, M):
     omega_dot = np.zeros((par.K), dtype=np.float64)
     for k in range(par.K):
         for i in range(par.I):
+            #Check negative concentrations:
+            #if(par.nu[i,k] > 0 and c[k]<0):
+                #print('i,k,par.nu[i,k],c')
+                #print(i)
+                #print(k)
+                #print(par.nu[i,k])
+                #print(c)
+                #q[i]=0
             omega_dot[k] += par.nu[i, k] * q[i]
-    
     return omega_dot
 
 
@@ -553,14 +563,14 @@ def _production_rate(T, H, S, c, P_amb, p, M):
 @njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
 def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0): 
     """ODE function for the bubble model. Returns the derivative of the state vector x at time t. 
-    Use extra_dims to plot extra variables (e.g. energy) during the simulation. Will impact the performance."""
-
+    Use extra_dims to plot extra variables (e.g. energy) during the simulation. Will impact the performance."""   
     R = x[0]      # bubble radius [m]
     R_dot = x[1]  # [m/s]
     if (thermodynamicalcase<2):
         R_dot = 0.0
     T = x[2]      # temperature [K]
     c = x[3:3+par.K]     # molar concentration [mol/cm^3]
+    
     M = np.sum(c) # sum of concentration
     X = c / M     # mole fraction [-]
     p = 0.1 * M * par.R_erg * T # Partial pressure of the gases [Pa]
@@ -599,11 +609,31 @@ def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, mu_L, rho
         c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
     else:
         n_net_dot = evap_energy = 0.0
-        
-    #Check negative concentrations
-    #for k in range(par.K):
-    #    if(c_dot[k]<0 and aaaaaaaaa)
+    
+    #Check negative concentrations:
+    #for k in range(len(c)):
+    #    if c[k]<=0.0:
+            #print('c_k lemegy!')
+            #print('k,c,c[k], omega_dot,dt:')
+            #print(k)
+            #print(c)
+            #print(c[k])
+            #print(c_dot)
+            #print(dt)
+            #print(-c[k]/dt)
+            #if(c_dot[k]<0.0):
+                #c_dot[k] = 1.0e-300#0.0
+            #print('\nc_dot,jav:\n')
+            #print(c_dot)
+
     dxdt[3:3+par.K] = c_dot
+    #for k in range(len(c)):
+    #    if c[k]<0:
+    #        print('k,c:')
+    #        print(k)
+    #        print(c)
+    #        print('dxdt:')
+    #        print(dxdt)
 # d/dt T
     sum_omega_dot = np.sum(omega_dot)
     Q_r_dot = 0.0
@@ -637,9 +667,9 @@ def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, mu_L, rho
         integrand_v = 16.0 * np.pi * mu_L * (R * R_dot*R_dot + R * R * R_dot * dxdt[1] / c_L)
         integrand_r = 4.0 * np.pi / c_L * R * R * R_dot * (R_dot * p + p_dot * R - 0.5 * rho_L * R_dot * R_dot * R_dot - rho_L * R * R_dot * dxdt[1])
 
-        dxdt[3+par.K+1] = integrand_th + integrand_v + integrand_r
+        dxdt[3+par.K] = integrand_th + integrand_v + integrand_r
     else:
-        dxdt[3+par.K+1] = 0.0
+        dxdt[3+par.K] = 0.0
 
 # PLOT EXTRA VARIABLES HERE
     if extra_dims > 0:  # You might change this to plot whatever your heart desires
@@ -723,7 +753,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
         if print_errors:
             tb = error.__traceback__
             print(colored(f'Error in solve(): LSODE had a fatal error:', 'red'))
-            print(''.join(traceback.format_exception(error, error, tb, limit=10)))
+            print(''.join(traceback.format_exception(error, error, tb, limit=15)))
     if error_code % 10 != 0:
         try: # try-catch block
             if(enable_time_evaluation_limit):
@@ -749,7 +779,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
             if print_errors:
                 tb = error.__traceback__
                 print(colored(f'Error in solve(): Radau had a fatal error:', 'red'))
-                print(''.join(traceback.format_exception(error, error, tb, limit=10)))
+                print(''.join(traceback.format_exception(error, error, tb, limit=15)))
     
     end = time.time()
     elapsed_time = (end - start)
