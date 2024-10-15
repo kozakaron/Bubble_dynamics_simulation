@@ -503,7 +503,7 @@ def _backward_rate(k_forward, S, H, T, reaction_rate_threshold, reaction_order):
             DeltaH += par.nu[i][k] * H[k]
         K_p = np.exp(DeltaS / par.R_erg - DeltaH / (par.R_erg * T))
         K_c[i] = K_p * (par.atm2Pa * 10.0 / (par.R_erg * T)) ** np.sum(par.nu[i])
-        K_c += (K_c == 0.0) * 1.0e-323  # MODIFIED
+        K_c[i] += (K_c[i] == 0.0) * 1.0e-323  # MODIFIED
         k_backward[i] = k_forward[i] / K_c[i]
     for i in par.IrreversibleIndexes:
         k_backward[i] = 0.0
