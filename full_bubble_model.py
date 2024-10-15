@@ -25,7 +25,7 @@ Usage:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = False
+enable_evaporation = True
 enable_reactions = True
 enable_dissipated_energy = True
 enable_reaction_rate_threshold = True
@@ -560,8 +560,8 @@ def _production_rate(T, H, S, c, P_amb, p, M):
 
 """________________________________Differential equation________________________________"""
 
-@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
-def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0): 
+@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
+def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0): 
     """ODE function for the bubble model. Returns the derivative of the state vector x at time t. 
     Use extra_dims to plot extra variables (e.g. energy) during the simulation. Will impact the performance."""   
     R = x[0]      # bubble radius [m]
@@ -605,7 +605,7 @@ def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, mu_L, rho
     c_dot = omega_dot - c * 3.0 * R_dot / R
 # Evaporation
     if enable_evaporation:
-        n_net_dot, evap_energy = _evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], H_steam=H[par.indexOfWater], alfa_M=alfa_M, Gamma=Gamma, sigma_evap=sigma_evap,T_inf=T_inf, P_v=P_v, C_4_starred=par.C_4_starred, C_p_water=par.C_p_water, J2erg=par.J2erg)
+        n_net_dot, evap_energy = _evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], H_steam=H[par.indexOfWater], alfa_M=alfa_M, Gamma=Gamma, sigma_evap=sigma_evap,T_inf=T_inf, P_v=P_v, C_4_starred=C_4_starred, C_p_water=par.C_p_water, J2erg=par.J2erg)
         c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
     else:
         n_net_dot = evap_energy = 0.0
@@ -733,13 +733,13 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
             num_sol = func_timeout( # timeout block
                 LSODA_timeout, solve_ivp,
                 kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
-                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
             ))
         else:
             num_sol = func_timeout( # timeout block
                 LSODA_timeout, solve_ivp,
                 kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
-                       args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments   
+                       args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments   
             ))
 
         if num_sol.success == False:
@@ -760,13 +760,13 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
                 num_sol = func_timeout( # timeout block
                     Radau_timeout, solve_ivp, 
                     kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
-                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
                 ))
             else:
                 num_sol = func_timeout( # timeout block
                     Radau_timeout, solve_ivp, 
                     kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
-                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
+                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
                 ))
             if num_sol.success == False:
                 error_code += 40
