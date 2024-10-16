@@ -154,6 +154,7 @@ physical_constants = dict(
     R_g = dict(value=8.31446, comment='Universal gas constant [J/mol/K]'),
     R_erg = dict(value=None, comment='Universal gas constant [erg/mol/K]'),
     R_cal = dict(value=None, comment='Universal gas constant [cal/mol/K]'),
+    k_B = dict(value=1.38064852e-23, comment='Boltzmann constant [J/K]'),
     N_A = dict(value=6.02214e23, comment='Avogadro\'s number [-]'),
     h = dict(value=6.62607015e-34, comment='Planck constant [m^2*kg/s]'),
     R_v = dict(value=None, comment='Specific gas constant of water [J/kg/K]'),

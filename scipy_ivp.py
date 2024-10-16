@@ -48,6 +48,8 @@ class FunctionWrapper:
     def __init__(self, fun, args):
         self.raw_fun = fun
         self.args = args
+        if args is None:
+            self.args = ()
         self.neval = 0
         self.id = id(fun)
 
@@ -343,30 +345,30 @@ def solve_ivp(fun, t_span, y0, method='RK45', timeout=-1.0, args=None,
             )
             raise TypeError(suggestion_tuple) from exp
 
-        fun = FunctionWrapper(fun, args)
+    fun = FunctionWrapper(fun, args)
 
-        jac = options.get('jac', None)
-        have_jac = True
-        if callable(jac):
-            have_jac = False
-            options['jac'] = lambda t, x: jac(t, x, *args)
-        elif not use_builtin_jac:
-            have_jac = False
-            atol = options.get('atol', 1e-6)
-            jac = scipy_jacobian.Jacobian(fun, len(y0), atol)
-            options['jac'] = jac
+    jac = options.get('jac', None)
+    have_jac = True
+    if callable(jac):
+        have_jac = False
+        options['jac'] = lambda t, x: jac(t, x, *args)
+    elif not use_builtin_jac:
+        have_jac = False
+        atol = options.get('atol', 1e-6)
+        jac = scipy_jacobian.Jacobian(fun, len(y0), atol)
+        options['jac'] = jac
 
 
-        if method in METHODS:
-            method = METHODS[method]
+    if method in METHODS:
+        method = METHODS[method]
 
     solver = method(fun, t0, y0, tf, vectorized=False, **options)
 
     ts = [t0]
     ys = [y0]
     limit = 0.03 * y0[0]
-    last_t = t0
-    last_y = y0
+    t = last_t = t0
+    y = last_y = y0
     last_last_y = y0
     T_max = 0.0
     collapse_time = 0.0
@@ -421,7 +423,7 @@ def solve_ivp(fun, t_span, y0, method='RK45', timeout=-1.0, args=None,
 
         # end while
 
-    if compression == 2:
+    if compression != 0:
         ts.append(last_t); ts.append(t)
         ys.append(last_y); ys.append(y)
     ts = np.array(ts)

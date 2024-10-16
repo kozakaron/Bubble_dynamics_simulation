@@ -413,7 +413,9 @@ def _evaporation(p, T, X_H2O, alfa_M, T_inf, P_v):
 @njit(float64[:](float64, float64[:], float64, float64))
 def _forward_rate(T, M_eff, M, p):
 # Reaction rate
+    k_max = par.k_B * T / par.h
     k_forward = par.A * T ** par.b * np.exp(-par.E / (par.R_cal * T))
+    k_forward = np.minimum(k_forward, k_max)
     
 # Pressure dependent reactions
     for j, i in enumerate(par.PressureDependentIndexes):    # i is the number of reaction, j is the index of i's place in par.PressureDependentIndexes
@@ -450,7 +452,7 @@ def _forward_rate(T, M_eff, M, p):
             F = par.SRI[j][3] * (par.SRI[j][0] * np.exp(-par.SRI[j][1] / T) + np.exp(-T / par.SRI[j][2]))**X * T ** par.SRI[j][4]
     # Pressure dependent reactions END
     
-        k_forward[i] = k_inf * P_r / (1.0 + P_r) * F
+        k_forward[i] = min(k_inf * P_r / (1.0 + P_r) * F, k_max)
 
 # PLOG reactions
     for j, i in enumerate(par.PlogIndexes):
@@ -473,7 +475,7 @@ def _forward_rate(T, M_eff, M, p):
         else:
             ln_k = np.log(k_lower) + (np.log(p) - np.log(par.Plog[lower][0])) / (np.log(par.Plog[upper][0]) - np.log(par.Plog[lower][0])) * (np.log(k_upper) - np.log(k_lower))
         
-        k_forward[i] = np.exp(ln_k)
+        k_forward[i] = min(np.exp(ln_k), k_max)
             
     return k_forward
 
@@ -489,7 +491,7 @@ def _backward_rate(k_forward, S, H, T):
             DeltaH += par.nu[i][k] * H[k]
         K_p = np.exp(DeltaS / par.R_erg - DeltaH / (par.R_erg * T))
         K_c = K_p * (par.atm2Pa * 10.0 / (par.R_erg * T)) ** np.sum(par.nu[i])
-        #K_c += (K_c == 0.0) * 1.0e-323  # MODIFIED
+        K_c = max(K_c, 1.0e-300)
         k_backward[i] = k_forward[i] / K_c
     for i in par.IrreversibleIndexes:
         k_backward[i] = 0.0
@@ -763,7 +765,7 @@ def get_errors(error_code, printit=False):
         errors.append(third_digit)
 
     # determine if soultion was succesfull
-    success = ('1xx' not in errors and '3xx' not in errors) and ('xx0' in errors or 'x0x' in errors)
+    success = (first_digit == 0 or second_digit == 0) and (third_digit == 0 or third_digit == 2)
 
     # print errors
     if printit:
@@ -814,8 +816,8 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.collapse_time = 0.0
     data.T_max = 0.0
     data.x_initial = np.zeros((4+par.K), dtype=np.float64)
-    data.x_final = np.zeros((4+par.K), dtype=np.float64)
-    data.t_final = 0.0
+    data.x_last = np.zeros((4+par.K), dtype=np.float64)
+    data.t_last = 0.0
     data[f'n_{target_specie}'] = 0.0
     data.m_target = 0.0
     data.expansion_work = 0.0
@@ -852,25 +854,25 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.message = getattr(num_sol, 'message', 0).replace('\n', ' ').replace(',', ' ').replace(';', ' ')
         
     # energy calculations
-    data.x_final = num_sol.y[-1] # final values of [R, R_dot, T, c_1, ... c_K]
-    if not all(np.isfinite(data.x_final)) and len(num_sol.y > 2):
-        data.x_final = num_sol.y[-2]
-    data.t_final = num_sol.t[-1] # [s]
-    last_V = 4.0 / 3.0 * (100.0 * data.x_final[0]) ** 3 * np.pi # [cm^3]
-    data[f'n_{target_specie}'] = data.x_final[3+par.index[target_specie]] * last_V # [mol]
+    data.x_last = num_sol.y[-1] # last values of [R, R_dot, T, c_1, ... c_K]
+    if not all(np.isfinite(data.x_last)) and len(num_sol.y > 2):
+        data.x_last = num_sol.y[-2]
+    data.t_last = num_sol.t[-1] # [s]
+    last_V = 4.0 / 3.0 * (100.0 * data.x_last[0]) ** 3 * np.pi # [cm^3]
+    data[f'n_{target_specie}'] = data.x_last[3+par.index[target_specie]] * last_V # [mol]
     m_target = 1.0e-3 * data[f'n_{target_specie}'] * par.W[par.index[target_specie]] # [kg]
     data.expansion_work = _work(cpar, enable_evaporation) # [J]
-    data.dissipated_acoustic_energy = data.x_final[3+par.K]  # [J]
+    data.dissipated_acoustic_energy = data.x_last[3+par.K]  # [J]
     all_work = data.expansion_work + data.dissipated_acoustic_energy
     data.energy_demand = 1.0e-6 * all_work / m_target if m_target > 0.0 else 1.0e30 # [MJ/kg]
     data.energy_efficiency = data.energy_demand # legacy for data.energy_demand
     data.target_specie = target_specie
     return data
 
-# keys of data: (except x_final and x_initial)
+# keys of data: (except x_last and x_initial)
 keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'rho_L', 'gases', 'fractions', 'surfactant', 'c_L',
         'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', 'nstep', 'saved_steps', 'nfev', 'njac', 'nlu', 'message',
-        f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_demand',
+        f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_demand', 't_last',
         'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
 
 def _print_line(name, value, comment, print_it=False):
@@ -963,13 +965,13 @@ def print_data(cpar, data, print_it=True):
     elapsed_time ={data.elapsed_time: .2f} [s]
     nstep = {data.nstep};   saved_steps = {data.saved_steps};   nfev = {data.nfev};   njac = {data.njac};   nlu = {data.nlu}'''
     
-    text += f'''\n\nFinal state:
-    R_final ={1e6*data.x_final[0]: .2f} [um];   R_dot_final ={data.x_final[1]} [m/s];   T_final ={data.x_final[2]: .2f} [K]
-    n_{target_specie}_final ={data[f'n_{target_specie}']: .2e} [mol];   t_final ={data.t_final: .6e} [s]
-    Final molar concentrations: [mol/cm^3]\n        '''
+    text += f'''\n\nLast state:
+    R_last ={1e6*data.x_last[0]: .2f} [um];   R_dot_last ={data.x_last[1]} [m/s];   T_last ={data.x_last[2]: .2f} [K]
+    n_{target_specie}_last ={data[f'n_{target_specie}']: .2e} [mol];   t_last ={data.t_last: .6e} [s]
+    Last molar concentrations: [mol/cm^3]\n        '''
     
     for k, specie in enumerate(par.species):
-        text += f'{specie: <6}: {data.x_final[3+k]: 12.6e};    '
+        text += f'{specie: <6}: {data.x_last[3+k]: 12.6e};    '
         if (k+1) % 4 == 0: text += f'\n        '
     
     text += f'''\nResults:
@@ -1159,19 +1161,19 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
 
     # make legend
     texts.sort(key=lambda x: x[-1], reverse=True)
-    last_n_final = 1.0e100
+    last_n_last = 1.0e100
     for text in texts:
-        color, name, n_final = text
+        color, name, n_last = text
         # spaceing
-        if n_final < 1e-24: continue
+        if n_last < 1e-24: continue
         limit = 5.5 if presentation_mode else 3.5
-        if last_n_final / n_final < limit:
-            n_final = last_n_final / limit
-        last_n_final = n_final
+        if last_n_last / n_last < limit:
+            n_last = last_n_last / limit
+        last_n_last = n_last
         # place text
         ax.text(
             t[-1],
-            n_final,
+            n_last,
             '$' + name + '$',
             color=color,
             fontsize=24 if presentation_mode else 18,
@@ -1334,7 +1336,7 @@ class Make_dir:
         """Writes the data dict into the currently opened csv as a new line. The line contains the values of the keys in the data dict."""
 
         line = self._list_to_string([data[key] for key in keys])
-        line += self.separator + self._list_to_string([x for x in data['x_initial'][:3+par.K]] + [x for x in data['x_final'][:3+par.K]])
+        line += self.separator + self._list_to_string([x for x in data['x_initial'][:3+par.K]] + [x for x in data['x_last'][:3+par.K]])
         self.file.write(line + '\n')
         self.lines += 1
         
@@ -1352,7 +1354,7 @@ class Make_dir:
         file.write(line + '\n')
         # write data
         line = self._list_to_string([data[key]] for key in keys)
-        line += self.separator + self._list_to_string([x for x in data.x_initial[:3+par.K]] + [x for x in data.x_final[:3+par.K]])
+        line += self.separator + self._list_to_string([x for x in data.x_initial[:3+par.K]] + [x for x in data.x_last[:3+par.K]])
         file.write(line + '\n')
         file.close()
 
