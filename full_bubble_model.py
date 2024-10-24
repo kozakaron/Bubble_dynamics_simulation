@@ -31,7 +31,7 @@ enable_dissipated_energy = True
 enable_reaction_rate_threshold = True
 enable_time_evaluation_limit = False
 target_specie = 'NH3' # Specie to calculate energy demand for
-excitation_type = 'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
+excitation_type = 'no_excitation'#'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
 
 """________________________________Libraries________________________________"""
 
@@ -684,8 +684,11 @@ def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starr
 @njit(float64(float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
 def stop_event(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0):
     # Ha minden derivált abszolút értéke kisebb, mint 10e-10, az esemény bekövetkezik
-    dxdt = _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0)
-    return np.max(dxdt[0:3]) - 1e-10
+    if(t>1.0e-3):
+        dxdt = _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0)
+        return abs(np.max(dxdt[0:3])) - 1e-10
+    else:
+        return 1.0
 
 
 
