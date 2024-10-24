@@ -241,7 +241,6 @@ def Viscosity(T):
 
 
 """________________________________Preprocessing________________________________"""
-
 def _initial_condition(cpar, evaporation=False, extra_dims=0):
     """Calculates the initial condition of the bubble from the control parameters. Arguments:
      * cpar: control parameters, dotdict
@@ -680,6 +679,15 @@ def _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starr
             dxdt[3+par.K+4] = integrand_th + integrand_v + integrand_r 
     return dxdt
 
+"""________________________________Stop event________________________________"""
+
+@njit(float64(float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
+def stop_event(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0):
+    # Ha minden derivált abszolút értéke kisebb, mint 10e-10, az esemény bekövetkezik
+    dxdt = _f(t, x, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, thermodynamicalcase, ex_args, extra_dims=0)
+    return np.max(dxdt[0:3]) - 1e-10
+
+
 
 """________________________________Solving________________________________"""
 
@@ -701,7 +709,10 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
      * error_code: see de.error_codes: dict, de.get_errors()
      * elapsed_time: elapsed time
     """
-
+    # The event must specify whether it should terminate and whether to search for the roots
+    stop_event.terminal = True
+    stop_event.direction = 0  # Search for zero-crossing in both directions (up or down)
+    
     if type(cpar) == dict:
         cpar = dotdict(cpar)
         
@@ -732,16 +743,16 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
         if(enable_time_evaluation_limit):
             num_sol = func_timeout( # timeout block
                 LSODA_timeout, solve_ivp,
-                kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
+                kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step, events=stop_event,# solve_ivp()'s arguments
                         args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
             ))
         else:
             num_sol = func_timeout( # timeout block
                 LSODA_timeout, solve_ivp,
-                kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
+                kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step, events=stop_event,# solve_ivp()'s arguments
                        args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments   
             ))
-
+            print('\n')
         if num_sol.success == False:
             error_code += 1
             if print_errors:
@@ -759,15 +770,16 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
             if(enable_time_evaluation_limit):
                 num_sol = func_timeout( # timeout block
                     Radau_timeout, solve_ivp, 
-                    kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
+                    kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step, events=stop_event,# solve_ivp()'s arguments
                         args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
                 ))
             else:
                 num_sol = func_timeout( # timeout block
                     Radau_timeout, solve_ivp, 
-                    kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step,# solve_ivp()'s arguments
+                    kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step, events=stop_event,# solve_ivp()'s arguments
                         args=(cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
                 ))
+                print('\n')
             if num_sol.success == False:
                 error_code += 40
                 if print_errors:
@@ -780,10 +792,9 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
                 tb = error.__traceback__
                 print(colored(f'Error in solve(): Radau had a fatal error:', 'red'))
                 print(''.join(traceback.format_exception(error, error, tb, limit=15)))
-    
+    print(max(num_sol.t))
     end = time.time()
     elapsed_time = (end - start)
-    
     return num_sol, error_code, elapsed_time
 
 # error codes description
