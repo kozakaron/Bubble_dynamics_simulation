@@ -9,7 +9,12 @@ import math
 import importlib   # for reloading your own files
 import itertools   # assemble all combinations of control parameters
 import json   # convert dictionary to string
+import numpy as np
 
+# my own files:
+import inp_data_extractor as inp   # numeric constants and coefficents
+importlib.reload(inp)   # reload changes you made
+inp.extract(path)
 # my own files:
 import parameters as par
 
@@ -68,19 +73,22 @@ to_optimize = 'energy_efficiency'   # key in data from de.get_data()
 starting_points = dict(
     ID = [0], #default value, will be overwritten
     # Equilibrium radius [um --> m]
-    R_E = [1.0e-6*x for x in [1.0e6*0.00966115244195245]], #[1.0, 2.0, 3.0, 4.0, 5.0, 7.5, 10.0, 15.0, 20.0, 25.0]],
+    R_E = [1.0e-6*x for x in [1000.0]], #[1.0, 2.0, 3.0, 4.0, 5.0, 7.5, 10.0, 15.0, 20.0, 25.0]],
     # R_star / R_E [-]
-    ratio = [5.74579143637999], #[2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0],
+    ratio = [1.0 * x for x in [10.0]], #[2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0],
     # Ambient pressure [Pa]
-    P_amb = [par.bar2Pa*x for x in [1000.0]],#[0.00, 0.50]], #[1e5*x for x in [1.0, 10.0, 25.0, 50.0]],
+    P_amb = [par.bar2Pa*x for x in [1.0e5]],#[0.00, 0.50]], #[1e5*x for x in [1.0, 10.0, 25.0, 50.0]],
     # Accommodation coeff. for evaporation [-]
     alfa_M = [0.35],
+    Gamma=[1.0], #[-]
+    sigma_evap=[0.4], #[-] 
+    C_4_starred=[-2.1412], #[-]
     # Ambient temperature [°C --> K]
     T_inf = [273.15+x for x in [20.0]],
     # Surface tension modifier [-]
     surfactant = [1.0],#[0.0,1.0],
     # Molar fractions of species in the initial bubble (H2 and N2) [-]
-    fractions = [[x,1.0-x] for x in [0.7302360446128061]], 
+    fractions = [[x,1.0-x] for x in [0.75]], 
     #Exciting frequency 1 [Hz]
     freq1 = [2.0e4], 
     #Exciting frequency 2 [Hz]
@@ -98,9 +106,9 @@ starting_points = dict(
     # excitation duration in period times [-]
     n =  [1.00],
     #Dynamic viscosity of the liquid [Pa*s]
-    mu_L = [0.001 * x for x in np.logspace(np.log10(0.2),np.log10(100.0),num=8)],#[0.1,100.0]],
+    mu_L = [0.001 * x for x in [1.0]],#np.logspace(np.log10(0.2),np.log10(100.0),num=8)],#[0.1,100.0]],
     #Sound velocity in the liquid [m/s]
-    c_L = [1483.0 * x for x  in np.linspace(0.7,1.3,num=8)],#[0.0,2.0]], 
+    c_L = [1483.0 * x for x  in [1.0]],#np.linspace(0.7,1.3,num=8)],#[0.0,2.0]], 
     #Density [kg/m^3]
     rho_L =  [998.20],
     #Thermodynamical case: Constant volume...
@@ -111,19 +119,22 @@ ID=1
 # Range or a single value for most control parameters
 ranges = dict(
     # Equilibrium radius [um --> m]
-    R_E = [1.0e-6*x for x in [9000.0,10000.0]], #[1.0, 2.0, 3.0, 4.0, 5.0, 7.5, 10.0, 15.0, 20.0, 25.0]],
+    R_E = [1.0e-6*x for x in np.logspace(1.9,2.0,num=2)], #[1.0, 2.0, 3.0, 4.0, 5.0, 7.5, 10.0, 15.0, 20.0, 25.0]],
     # R_star / R_E [-]
     ratio = [1.1,20.0], #[2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0],
     # Ambient pressure [Pa]
-    P_amb = [par.bar2Pa*x for x in [1000.0]],#[0.00, 0.50]], #[1e5*x for x in [1.0, 10.0, 25.0, 50.0]],
+    P_amb = [par.bar2Pa*x for x in [1.0]],#[0.00, 0.50]], #[1e5*x for x in [1.0, 10.0, 25.0, 50.0]],
     # Accommodation coeff. for evaporation [-]
     alfa_M = [0.35],
+    Gamma=[1.0], #[-]
+    sigma_evap=[0.4], #[-] 
+    C_4_starred=[-2.1412], #[-]
     # Ambient temperature [°C --> K]
     T_inf = [273.15+x for x in [20.0]],
     # Surface tension modifier [-]
     surfactant = [1.0],#[0.0,1.0],
     # Molar fractions of species in the initial bubble (H2 and N2) [-]
-    fractions = [[0.40, 0.60],[0.85, 0.15]], 
+    fractions = [[0.75,0.25]],#[[0.40, 0.60],[0.85, 0.15]], 
     #Exciting frequency 1 [Hz]
     freq1 = [2.0e4], 
     #Exciting frequency 2 [Hz]
@@ -183,7 +194,7 @@ kwargs_list = [dict(
     start_point=gm.fix_starter_point(ranges, i, cpars[i], gases=[gm.de.par.index['H2'], gm.de.par.index['N2']]),
     max_steps=2000, #in gradient method
     first_step=0.05, #between two parameter combinations
-    min_step=0.00001, #between two parameter combinations
+    min_step=0.0001, #between two parameter combinations
     decay=0.6,
     gamma=1.0, #x_n+1=x_n-gamma*grad(F(x_n))
     t_int=np.array([0.0, 1.0e4]),
@@ -193,7 +204,7 @@ kwargs_list = [dict(
 
 # save points
 file.new_file()
-with Pool(processes=2, maxtasksperchild=10) as pool: #processes=cpu_count()
+with Pool(processes=4, maxtasksperchild=10) as pool: #processes=cpu_count()
     results = pool.imap_unordered(gm.search,kwargs_list)
     for result in results:
         datas, best_central_values, elapsed, step_num, point_num = result
