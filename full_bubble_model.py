@@ -759,7 +759,6 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
                 kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step, events=stop_event,# solve_ivp()'s arguments
                        args=(cpar.R_E, cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments   
             ))
-            print('\n')
         if num_sol.success == False:
             error_code += 1
             if print_errors:
@@ -786,7 +785,6 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
                     kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step, events=stop_event,# solve_ivp()'s arguments
                         args=(cpar.R_E, cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
                 ))
-                print('\n')
             if num_sol.success == False:
                 error_code += 40
                 if print_errors:
