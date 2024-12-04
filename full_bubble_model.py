@@ -31,7 +31,7 @@ enable_dissipated_energy = True
 enable_reaction_rate_threshold = True
 enable_time_evaluation_limit = False
 target_specie = 'NH3' # Specie to calculate energy demand for
-excitation_type = 'double_sin_impulse_with_phase_shift' # function to calculate pressure excitation (see excitation.py for options)
+excitation_type = 'no_excitation' # function to calculate pressure excitation (see excitation.py for options)
 
 """________________________________Libraries________________________________"""
 
@@ -318,7 +318,7 @@ def _work(cpar, evaporation=False):
 def _pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, args):
     (p_Inf, p_Inf_dot) = Excitation(t, P_amb, args)
     p_L = p - (2.0 * surfactant * par.sigma + 4.0 * mu_L * R_dot) / R
-    p_L_dot = p_dot + (-2.0 * surfactant * par.sigma * R_dot + 4.0 * mu_L * R_dot ** 2) / (R ** 2)
+    p_L_dot = p_dot + (2.0 * surfactant * par.sigma * R_dot + 4.0 * mu_L * R_dot ** 2) / (R ** 2)
     delta = (p_L - p_Inf) / rho_L
     delta_dot = (p_L_dot - p_Inf_dot) / rho_L
     return delta, delta_dot
