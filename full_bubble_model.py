@@ -422,6 +422,8 @@ def _forward_rate(T, M_eff, M, p, reaction_rate_threshold):
     k_forward = par.A * T ** par.b * np.exp(-par.E / (par.R_cal * T))
     
 # Pressure dependent reactions
+    Troe_Index=0
+    SRI_index=0
     for j, i in enumerate(par.PressureDependentIndexes):    # i is the number of reaction, j is the index of i's place in par.PressureDependentIndexes
         k_inf = k_forward[i]    # par.A[i] * T ** par.b[i] * np.exp(-par.E[i] / (par.R_cal * T))
         k_0 = par.ReacConst[j][0] * T ** par.ReacConst[j][1] * np.exp(-par.ReacConst[j][2] / (par.R_cal * T))
@@ -441,7 +443,7 @@ def _forward_rate(T, M_eff, M, p, reaction_rate_threshold):
 
         # Troe formalism
         elif i in par.TroeIndexes:
-            F_cent = (1.0 - par.Troe[j][0]) * np.exp(-T / par.Troe[j][1]) + par.Troe[j][0] * np.exp(-T / par.Troe[j][2]) + np.exp(-par.Troe[j][3] / T)
+            F_cent = (1.0 - par.Troe[Troe_Index][0]) * np.exp(-T / par.Troe[Troe_Index][1]) + par.Troe[Troe_Index][0] * np.exp(-T / par.Troe[Troe_Index][2]) + np.exp(-par.Troe[Troe_Index][3] / T)
             logF_cent = np.log10(F_cent)
             c2 = -0.4 - 0.67 * logF_cent
             n = 0.75 - 1.27 * logF_cent
@@ -449,11 +451,13 @@ def _forward_rate(T, M_eff, M, p, reaction_rate_threshold):
             logP_r = np.log10(P_r)
             logF = 1.0 / (1.0 + ((logP_r + c2) / (n - d * (logP_r + c2))) ** 2) * logF_cent
             F = 10.0 ** logF
+            Troe_Index = Troe_Index + 1
         
         # SRI formalism
         elif i in par.SRIIndexes: 
             X = 1.0 / (1.0 + np.log10(P_r)**2)
-            F = par.SRI[j][3] * (par.SRI[j][0] * np.exp(-par.SRI[j][1] / T) + np.exp(-T / par.SRI[j][2]))**X * T ** par.SRI[j][4]
+            F = par.SRI[SRI_index][3] * (par.SRI[SRI_index][0] * np.exp(-par.SRI[SRI_index][1] / T) + np.exp(-T / par.SRI[SRI_index][2]))**X * T ** par.SRI[SRI_index][4]
+            SRI_index = SRI_index + 1
     # Pressure dependent reactions END
     
         k_forward[i] = k_inf * P_r / (1.0 + P_r) * F
