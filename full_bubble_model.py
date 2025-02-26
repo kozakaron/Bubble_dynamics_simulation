@@ -496,7 +496,7 @@ def _backward_rate(k_forward, S, H, T, reaction_rate_threshold, reaction_order):
     if(enable_reaction_rate_threshold):
         for i in range(par.I):
             if(abs(k_forward[i]) > reaction_rate_threshold * np.power(par.N_A,reaction_order[i, 0])):
-                k_forward[i] = reaction_rate_threshold * np.sign(k_forward[i])
+                k_forward[i] = reaction_rate_threshold * np.power(par.N_A,reaction_order[i, 0] * np.sign(k_forward[i])
     
     for i in range(par.I):
         DeltaS = 0.0
@@ -514,7 +514,7 @@ def _backward_rate(k_forward, S, H, T, reaction_rate_threshold, reaction_order):
     if(enable_reaction_rate_threshold): 
         for i in range(par.I):
             if(abs(k_backward[i]) > reaction_rate_threshold * np.power(par.N_A,reaction_order[i, 0]) / K_c[i]):
-                k_backward[i] = reaction_rate_threshold * np.sign(k_backward[i])
+                k_backward[i] = reaction_rate_threshold * np.power(par.N_A,reaction_order[i, 0] / K_c[i] * np.sign(k_backward[i])
                 k_forward[i] = K_c[i]*k_backward[i]
     return k_forward,k_backward
 
