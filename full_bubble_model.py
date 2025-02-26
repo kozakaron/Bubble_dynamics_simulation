@@ -928,6 +928,11 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
         return data
     
     # normal functioning
+    num_sol.t = num_sol.t / cpar.freq
+    num_sol.y[0,:] = num_sol.y[0,:] * cpar.R_E
+    num_sol.y[1,:] = num_sol.y[1,:] * cpar.R_E * cpar.freq
+    num_sol.y[2,:] = num_sol.y[2,:] * cpar.T_inf
+    
     data.steps = len(num_sol.t)
     data.x_initial = num_sol.y[:, 0] # initial values of [R, R_dot, T, c_1, ... c_K]
     # collapse time (first loc min of R)    TODO fix
@@ -1048,7 +1053,7 @@ def print_data(cpar, data, print_it=True):
     steps ={data.steps: .0f} [-]'''
     
     text += f'''\nFinal state:
-    R_final ={1e6*data.x_final[0]*cpar.R_E: .2f} [um];   R_dot_final ={data.x_final[1] * cpar.R_E/cpar.freq} [m/s];   T_final ={data.x_final[2]*cpar.T_inf: .2f} [K]
+    R_final ={1e6*data.x_final[0]: .2f} [um];   R_dot_final ={data.x_final[1]} [m/s];   T_final ={data.x_final[2]: .2f} [K]
     n_{target_specie}_final ={data[f'n_{target_specie}']: .6e} [mol]
     Final molar concentrations: [mol/cm^3]\n        '''
     
@@ -1143,12 +1148,12 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
     #    end_index = np.where(num_sol.t > n * data.collapse_time)[0][0]
 
     if num_sol.t[end_index] < 1e-3:
-        t = num_sol.t[:end_index] * 1e6 / cpar.freq # [us]
+        t = num_sol.t[:end_index] * 1e6 # [us]
     else:
-        t = num_sol.t[:end_index] * 1e3 / cpar.freq # [ms]
-    R = num_sol.y[0, :end_index] * cpar.R_E # [m]
-    R_dot = num_sol.y[1, :end_index] * cpar.R_E * cpar.freq  # [m/s]
-    T = num_sol.y[2, :end_index] * cpar.T_inf # [K]
+        t = num_sol.t[:end_index] * 1e3 # [ms]
+    R = num_sol.y[0, :end_index] # [m]
+    R_dot = num_sol.y[1, :end_index]  # [m/s]
+    T = num_sol.y[2, :end_index] # [K]
     c = num_sol.y[3:3+par.K, :end_index] # [mol/cm^3]
 
     V = 4.0 / 3.0 * (100.0 * R) ** 3 * np.pi # [cm^3]
