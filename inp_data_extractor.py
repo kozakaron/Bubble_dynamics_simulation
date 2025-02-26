@@ -209,6 +209,7 @@ def _get_elements(lines):
 
     i = _find('ELEM', lines)
     elements = []
+    
     while not 'END' in lines[i]:
         line = lines[i]
         line = line.replace('ELEMENTS', '')
@@ -226,7 +227,7 @@ def _get_elements(lines):
                 if element.replace('/', '').replace('+', '', 2).replace('-', '', 2).replace('.', '', 1).replace('E', '', 1).isnumeric(): continue
                 print(colored(f'Warning, element \'{element}\' is not recognised, it won\'t be, included', 'yellow')) 
         i += 1
-    
+        
     return elements
 
 """________________________________Species data________________________________"""
@@ -237,6 +238,8 @@ def _get_species(lines, elements):
   # Get species
     i = _find('SPEC', lines)
     species = []
+    ordinal_numbers_of_elements =[]
+    element_ordinal_number = 0
     while not 'END' in lines[i]:
         line = lines[i]
         line = line.replace('SPECIES', '')
@@ -272,6 +275,7 @@ def _get_species(lines, elements):
                 if specie[1] in digits:
                     components[i][elements.index(specie[0])] += int(specie[1])
                     specie = specie[2:]
+                    
                 else:
                     components[i][elements.index(specie[0])] += 1
                     specie = specie[1:]
@@ -282,9 +286,14 @@ def _get_species(lines, elements):
         w = 0.0
         for element, num in zip(elements, components[i]):
             w += num * data.W[element]
-        W.append(round(w, 5))
+        W.append(round(w, 5)) 
         
-    return species, W, lambdas
+    for k in range(len(species)):
+        for l in range(len(elements)):
+            if(species[k]==elements[l]):
+                 ordinal_numbers_of_elements.append(k)
+            
+    return species,ordinal_numbers_of_elements , components, W, lambdas
 
 """________________________________Thermodynamic data________________________________"""
 
@@ -381,10 +390,10 @@ def _get_reactions(lines, species):
         isThirdBody = isPressureDependent = isTroe = isSRI = isPLOG = False
         isManualThirdBodyCoefficients = False
         
-        if '(+M)=' in line.replace(' ',''):
+        if '(+M)' in line.replace(' ','').replace('<=>', '=').replace('=>', '>').replace('>', '=>'):
             isPressureDependent = True
             isThirdBody = True
-        elif '+M=' in line.replace(' ',''): 
+        elif '+M' in line.replace(' ','').replace('<=>', '=').replace('=>', '>').replace('>', '=>'): 
             isThirdBody = True
         
         if not any([keyword in lines[i] for keyword in keywords+['END']]):
@@ -571,6 +580,7 @@ def _get_nu(reactions, species, W):
 
     nu_forward = np.zeros((len(reactions), len(species)), dtype=int)
     nu_backward = np.zeros((len(reactions), len(species)), dtype=int)
+    reaction_order = np.zeros((len(reactions),1), dtype=int)
     IrreversibleIndexes = []
     digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
@@ -599,7 +609,7 @@ def _get_nu(reactions, species, W):
                     print(colored(f'Warning, photon (HV) in reaction {x} (\'{reactions[x]}\') is ignored', 'yellow'))
                 else:
                     print(colored(f'Warning, \'{f}\' in reaction {x} (\'{reactions[x]}\') is not in species, it is ignored', 'yellow'))
-
+        reaction_order[x] = np.sum(nu_forward[x])
         for b in backward:
             num = 1
             if b[0] in digits:
@@ -620,7 +630,7 @@ def _get_nu(reactions, species, W):
         if abs(sum(nu[i] * W)) > 1e-5:
             print(colored(f'Warning, nonconsistent reaction {i} (\'{reactions[i]}\')', 'yellow'))
     
-    return nu_forward, nu_backward, IrreversibleIndexes
+    return nu_forward, nu_backward, reaction_order, IrreversibleIndexes
 
 """________________________________Printing to file________________________________"""
 
@@ -640,7 +650,7 @@ def extract(path):
   # Extract data
     lines = _get_lines(text)
     elements = _get_elements(lines)
-    species, W, lambdas = _get_species(lines, elements)
+    species,ordinal_numbers_of_elements , components, W, lambdas = _get_species(lines, elements)
     TempRange, a_low, a_high = _get_thermo(lines, species)
     (reactions, A, B, E,
         ThirdBodyIndexes, alfa,
@@ -649,7 +659,7 @@ def extract(path):
             TroeIndexes, Troe,
             SRIIndexes, SRI,
         PlogIndexes, Plog) = _get_reactions(lines, species)
-    nu_forward, nu_backward, IrreversibleIndexes = _get_nu(reactions, species, W)
+    nu_forward, nu_backward, reaction_order, IrreversibleIndexes = _get_nu(reactions, species, W)
     
   # Create parameters.py
     line_start = '\n\"\"\"________________________________'
@@ -674,7 +684,9 @@ def extract(path):
         max_len = 0
     else:
         max_len = 10
+    text += f'ordinal_numbers_of_elements = np.array({print_array(ordinal_numbers_of_elements, 0)})\n'
     text += f'species = np.array({print_array(species, 10, max_len=max_len)})\n\n'
+    text += f'components = np.array({print_array(components, 10, max_len=max_len)})\n\n'
     text += f'# molar mass [g/mol]\n'
     text += f'W = np.array([      {print_array(W, 10, max_len=max_len)[1:]}, dtype=np.float64)\n\n'
     text += f'# thermal conductivity [W / m / K]\n'
@@ -716,6 +728,7 @@ def extract(path):
     text += f'# Backward reaction matrix\n'
     text += f'nu_backward = np.array('+ print_array(nu_backward, 4, [f'{x:>2}. {reaction}' for x, reaction in enumerate(reactions)], species) + ', dtype=np.float64)\n\n'
     text += f'nu = nu_backward - nu_forward\n\n'
+    text += f'reaction_order = np.array('+ print_array(reaction_order, 4, [f'{x:>2}. {reaction}' for x, reaction in enumerate(reactions)]) + ', dtype=np.int64)\n\n'
     
     # Three-body reactions
     text += line_start + 'Three-body reactions' + line_end

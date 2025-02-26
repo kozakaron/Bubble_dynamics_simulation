@@ -25,6 +25,7 @@ def getExcitation(excitation_type='no_excitation'):
      * 'sin_impulse': sinusoid with only n amplitude cycles, the ends are not smoothed out
      * 'sin_impulse_logf': same as 'sin_impulse', but log10(freq) is used instead of freq
      * 'double_sin_impulse': n cycle of two sinusoids with different frequencies and amplitudes and no phase shift; the 2nd frequency is freq_ratio times the 1st frequency
+     * 'double_sin_impulse_with_phase_shift': n cycle of two sinusoids with different frequencies and amplitudes and phase shift; the 2nd frequency is freq_ratio times the 1st frequency; phase shift is measured using the 1st frequency (which is LOWER)
      * 'multi_sin_impulse': 5 cycles of sinusoids with different frequencies and amplitudes for each cycle
      * 'double_multi_sin_impulse': 5 cycles of two sinusoids with different frequencies and amplitudes for each cycle; 2 sine waves are used each time, similar to 'double_sin_impulse'
      
@@ -195,6 +196,32 @@ def getExcitation(excitation_type='no_excitation'):
         units = ['Pa', 'Pa', 'Hz', '-', '-']
         defaults = [-2e5, -1e5, 30e3, 3.0, 2.0]
         return Excitation, args, units, defaults
+    
+    elif excitation_type == 'double_sin_impulse_with_phase_shift':
+        @njit(Tuple((float64, float64))(float64, float64, float64[:]))
+        def Excitation(t, P_amb, args):
+            p_A1, p_A2, freq, freq_ratio, theta_phase, n = args
+            if t < 0.0:
+                p_Inf = P_amb
+                p_Inf_dot = 0.0
+            elif t > n / freq:
+                p_Inf = P_amb
+                p_Inf_dot = 0.0
+            else:
+                insin = 2.0*np.pi*freq
+                if(t<-theta_phase/(2.0*np.pi*freq*freq_ratio) or t>-theta_phase/(2.0*np.pi*freq*freq_ratio) + n/(freq*freq_ratio)):
+                    p_Inf = P_amb + p_A1*np.sin(insin*t)
+                    p_Inf_dot = p_A1*insin*np.cos(insin*t)
+                else:
+                    p_Inf = P_amb + p_A1*np.sin(insin*t) + p_A2*np.sin(freq_ratio*insin*t+theta_phase)
+                    p_Inf_dot = p_A1*insin*np.cos(insin*t) + p_A2*freq_ratio*insin*np.cos(freq_ratio*insin*t+theta_phase)
+            return p_Inf, p_Inf_dot
+        
+        args = ['p_A1', 'p_A2', 'freq', 'freq_ratio', 'theta_phase', 'n']
+        units = ['Pa', 'Pa', 'Hz', '-', '-', '-']
+        defaults = [-2e5, -1e5, 30e3, 3.0, 0.0, 2.0]
+        return Excitation, args, units, defaults
+    
     
     elif excitation_type == 'multi_sin_impulse':
         @njit(Tuple((float64, float64))(float64, float64, float64[:]))
