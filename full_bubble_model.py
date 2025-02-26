@@ -25,13 +25,13 @@ Usage:
 """________________________________Settings________________________________"""
 
 enable_heat_transfer = True
-enable_evaporation = False
+enable_evaporation = True
 enable_reactions = True
 enable_dissipated_energy = True
 enable_reaction_rate_threshold = True
 enable_time_evaluation_limit = False
 target_specie = 'NH3' # Specie to calculate energy demand for
-excitation_type = 'no_excitation' # function to calculate pressure excitation (see excitation.py for options)
+excitation_type = 'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
 
 """________________________________Libraries________________________________"""
 
@@ -315,9 +315,9 @@ def _work(cpar, evaporation=False):
 
 """________________________________pressures________________________________"""
 
-@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
-def _pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, args):
-    (p_Inf, p_Inf_dot) = Excitation(t, P_amb, args)
+@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:]))
+def _pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, freq, args):
+    (p_Inf, p_Inf_dot) = Excitation(t / freq, P_amb, args)
     p_L = p - (2.0 * surfactant * par.sigma + 4.0 * mu_L * R_dot) / R
     p_L_dot = p_dot + (2.0 * surfactant * par.sigma * R_dot + 4.0 * mu_L * R_dot ** 2) / (R ** 2)
     delta = (p_L - p_Inf) / rho_L
@@ -655,7 +655,7 @@ def _f(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_
 # d/dt R_dot
     (delta, delta_dot) = _pressure(t=t,
         R=R, R_dot=R_dot, mu_L=mu_L, surfactant=surfactant, rho_L=rho_L,
-        p=p, p_dot=p_dot, P_amb=P_amb, args=ex_args
+        p=p, p_dot=p_dot, P_amb=P_amb, freq=freq, args=ex_args
     )   # delta = (p_L-P_amb) / rho_L
     
     Nom = (1.0 + R_dot / c_L) * delta + R / c_L * delta_dot - (1.5 - 0.5 * R_dot / c_L) * R_dot ** 2
@@ -1146,9 +1146,9 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
         t = num_sol.t[:end_index] * 1e6 / cpar.freq # [us]
     else:
         t = num_sol.t[:end_index] * 1e3 / cpar.freq # [ms]
-    R = num_sol.y[0, :end_index] # [m]
-    R_dot = num_sol.y[1, :end_index] # [m/s]
-    T = num_sol.y[2, :end_index] # [K]
+    R = num_sol.y[0, :end_index] * cpar.R_E # [m]
+    R_dot = num_sol.y[1, :end_index] * cpar.R_E * cpar.freq  # [m/s]
+    T = num_sol.y[2, :end_index] * cpar.T_inf # [K]
     c = num_sol.y[3:3+par.K, :end_index] # [mol/cm^3]
 
     V = 4.0 / 3.0 * (100.0 * R) ** 3 * np.pi # [cm^3]
@@ -1172,8 +1172,8 @@ def plot(cpar, t_int=np.array([0.0, 1.0]), n=5.0, base_name='', format='png', LS
     fig1 = plt.figure(figsize=(16, 9) if presentation_mode else (20, 6))
     ax1 = fig1.add_subplot(axisbelow=True)
     ax2 = ax1.twinx() 
-    ax1.plot(t, R, color = 'b', linewidth = linewidth)
-    ax2.plot(t, T * cpar.T_inf, color = 'r', linewidth = linewidth, linestyle = '-.')
+    ax1.plot(t, R/cpar.R_E, color = 'b', linewidth = linewidth)
+    ax2.plot(t, T, color = 'r', linewidth = linewidth, linestyle = '-.')
 
     if num_sol.t[end_index] < 1e-3:
         ax1.set_xlabel('$t$ [μs]')
