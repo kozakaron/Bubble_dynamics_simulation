@@ -754,6 +754,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
         error_code += 200
 
     # solving d/dt x=f(t, x, cpar)
+    t_int[1] = t_int[1] * cpar.freq #converting from t to dimensionless t
     t_eval=np.array([t_int[0],t_int[1]])
 
     #Dimensionless system in R and T:
