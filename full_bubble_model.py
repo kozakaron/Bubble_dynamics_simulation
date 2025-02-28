@@ -946,7 +946,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     #data.T_max = np.max(num_sol.y[2,:]) # maximum of temperature peaks [K]
     data.x_final = num_sol.y[:,-1] # final values of [R, R_dot, T, c_1, ... c_K]
      
-    last_V = 4.0 / 3.0 * (100.0 * data.x_final[0] * cpar.R_E) ** 3 * np.pi # [cm^3]
+    last_V = 4.0 / 3.0 * (100.0 * data.x_final[0]) ** 3 * np.pi # [cm^3]
     data[f'n_{target_specie}'] = data.x_final[3+par.index[target_specie]] * last_V # [mol]
     m_target = 1.0e-3 * data[f'n_{target_specie}'] * par.W[par.index[target_specie]] # [kg]
     data.expansion_work = _work(cpar, enable_evaporation) # [J]
