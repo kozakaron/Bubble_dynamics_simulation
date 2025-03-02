@@ -1,4 +1,5 @@
-"""This script cleans all python file in this directory and runst inp_data_extractor.extract() on all .inp files in the directory."""
+"""This script cleans all python file in the "INP file examples" directory
+and runst inp_data_extractor.extract() on all .inp files."""
 
 import os
 import importlib   # for reloading your own files

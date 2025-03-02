@@ -28,6 +28,7 @@ enable_heat_transfer = True
 enable_evaporation = False
 enable_reactions = True
 enable_dissipated_energy = True
+enable_reaction_rate_threshold = True
 target_specie = 'NH3' # Specie to calculate energy demand for
 excitation_type = 'sin_impulse' # function to calculate pressure excitation (see excitation.py for options)
 
@@ -113,6 +114,7 @@ print(f'model: {par.model}')
 print(f'target specie: {target_specie}')
 print(f'excitation: {excitation_type} (control parameters: {excitation_args})')
 print(f'enable heat transfer: {_colorTF(enable_heat_transfer)}\tenable evaporation: {_colorTF(enable_evaporation)}\tenable reactions: {_colorTF(enable_reactions)}\tenable dissipated energy: {_colorTF(enable_dissipated_energy)}')
+print(f'enable reaction rate threshold: {_colorTF(enable_reaction_rate_threshold)}')
 if target_specie not in par.species:
     print(colored(f'Error, target specie \'{target_specie}\' not found in parameters.py', 'red'))
 
@@ -402,6 +404,8 @@ def _forward_rate(T, M_eff, M, p):
     k_forward = par.A * T ** par.b * np.exp(-par.E / (par.R_cal * T))
     
 # Pressure dependent reactions
+    Troe_Index = 0
+    SRI_index = 0
     for j, i in enumerate(par.PressureDependentIndexes):    # i is the number of reaction, j is the index of i's place in par.PressureDependentIndexes
         k_inf = k_forward[i]    # par.A[i] * T ** par.b[i] * np.exp(-par.E[i] / (par.R_cal * T))
         k_0 = par.ReacConst[j][0] * T ** par.ReacConst[j][1] * np.exp(-par.ReacConst[j][2] / (par.R_cal * T))
@@ -421,7 +425,7 @@ def _forward_rate(T, M_eff, M, p):
 
         # Troe formalism
         elif i in par.TroeIndexes:
-            F_cent = (1.0 - par.Troe[j][0]) * np.exp(-T / par.Troe[j][1]) + par.Troe[j][0] * np.exp(-T / par.Troe[j][2]) + np.exp(-par.Troe[j][3] / T)
+            F_cent = (1.0 - par.Troe[Troe_Index][0]) * np.exp(-T / par.Troe[Troe_Index][1]) + par.Troe[Troe_Index][0] * np.exp(-T / par.Troe[Troe_Index][2]) + np.exp(-par.Troe[Troe_Index][3] / T)
             logF_cent = np.log10(F_cent)
             c2 = -0.4 - 0.67 * logF_cent
             n = 0.75 - 1.27 * logF_cent
@@ -429,11 +433,13 @@ def _forward_rate(T, M_eff, M, p):
             logP_r = np.log10(P_r)
             logF = 1.0 / (1.0 + ((logP_r + c2) / (n - d * (logP_r + c2))) ** 2) * logF_cent
             F = 10.0 ** logF
+            Troe_Index += 1
         
         # SRI formalism
         elif i in par.SRIIndexes: 
             X = 1.0 / (1.0 + np.log10(P_r)**2)
-            F = par.SRI[j][3] * (par.SRI[j][0] * np.exp(-par.SRI[j][1] / T) + np.exp(-T / par.SRI[j][2]))**X * T ** par.SRI[j][4]
+            F = par.SRI[SRI_index][3] * (par.SRI[SRI_index][0] * np.exp(-par.SRI[SRI_index][1] / T) + np.exp(-T / par.SRI[SRI_index][2]))**X * T ** par.SRI[SRI_index][4]
+            SRI_index += 1
     # Pressure dependent reactions END
     
         k_forward[i] = k_inf * P_r / (1.0 + P_r) * F
@@ -687,36 +693,36 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
     # solving d/dt x=f(t, x, cpar)
     try: # try-catch block
         fun = FunctionWrapper(args, LSODA_timeout)
-        kwargs=dict(fun=fun, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10)
+        num_sol = solve_ivp(fun=fun, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10)
         if num_sol.success == False:
             error_code += 1
             if print_errors:
-                print(colored(error_codes['1xx']['describtion'], error_codes['1xx']['color']))
+                print(colored(error_codes['xx1']['describtion'], error_codes['xx1']['color']))
     except Timeout:
         error_code += 2
         if print_errors:
-            print(colored(error_codes['2xx']['describtion'], error_codes['2xx']['color']))
+            print(colored(error_codes['xx2']['describtion'], error_codes['xx2']['color']))
     except Exception as error:
         error_code += 3
         if print_errors:
-            print(colored(error_codes['3xx']['describtion'], error_codes['3xx']['color']))
+            print(colored(error_codes['xx3']['describtion'], error_codes['xx3']['color']))
             print(''.join(traceback.format_exception(error, limit=5)))
     if error_code % 10 != 0:
         try: # try-catch block
             fun = FunctionWrapper(args, Radau_timeout)
-            kwargs=dict(fun=fun, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10)
+            num_sol = solve_ivp(fun=fun, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10)
             if num_sol.success == False:
                 error_code += 40
                 if print_errors:
-                    print(colored(error_codes['4xx']['describtion'], error_codes['4xx']['color']))
-        except FunctionTimedOut:
+                    print(colored(error_codes['x4x']['describtion'], error_codes['x4x']['color']))
+        except Timeout:
             error_code += 50
             if print_errors:
-                print(colored(error_codes['5xx']['describtion'], error_codes['5xx']['color']))
+                print(colored(error_codes['x5x']['describtion'], error_codes['x5x']['color']))
         except Exception as error:
             error_code += 60
             if print_errors:
-                print(colored(error_codes['6xx']['describtion'], error_codes['6xx']['color']))
+                print(colored(error_codes['x6x']['describtion'], error_codes['x6x']['color']))
                 print(''.join(traceback.format_exception(error, limit=5)))
     
     end = time.time()
@@ -829,8 +835,10 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     # normal functioning
     data.steps = getattr(num_sol, 'nstep', 0)
     data.x_initial = num_sol.y[0] # initial values of [R, R_dot, T, c_1, ... c_K]
-    data.collapse_time = getattr(num_sol, 'collapse_time', 0.0) # [s]
-    data.T_max = getattr(num_sol, 'T_max', 0.0) # maximum of temperature peaks [K]
+    loc_min = argrelmin(num_sol.y[:][0])
+    if not len(loc_min) == 0 and not len(loc_min[0]) == 0:
+        data.collapse_time = num_sol.t[loc_min[0][0]] # collapse time (first loc min of R) [s]
+    data.T_max = np.max(num_sol.y[:][2]) # maximum of temperature peaks [K]
     data.nstep = getattr(num_sol, 'nstep', 0)
     data.nfev = getattr(num_sol, 'nfev', 0)
     data.njac = getattr(num_sol, 'njac', 0)
@@ -1275,6 +1283,7 @@ full_bubble_model settings:
     enable_evaporation = {enable_evaporation} 
     enable_reactions = {enable_reactions}
     enable_dissipated_energy = {enable_dissipated_energy}
+    enable_reaction_rate_threshold = {enable_reaction_rate_threshold}
     target_specie = \'{target_specie}\' # Specie to calculate energy effiqiency
     excitation_type = \'{excitation_type}\' # function to calculate pressure excitation
 '''
