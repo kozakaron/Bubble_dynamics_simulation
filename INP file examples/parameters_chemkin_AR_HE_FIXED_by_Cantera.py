@@ -13,6 +13,7 @@ import numpy as np
 
 c_L            = 1483.0                   # Liquid sound speed at 30 °C [m/s]
 rho_L          = 998.2                    # Liquid density [kg/m^3]
+C_p_L          = 4178.0                   # Isobar heat capacity of water [J/(kg*K)]
 sigma          = 0.07197                  # Surface tension [N/m]
 mu_L           = 0.001                    # Dynamic viscosity at 30 °C and 1 atm [Pa*s]
 P_v            = 2338.1                   # Saturated vapour pressure at 30 °C [Pa]
@@ -25,7 +26,9 @@ h              = 6.62607015e-34           # Planck constant [m^2*kg/s]
 k_B            = 1.3806487394846352e-23   # Boltzmann constant [J/K]
 R_v            = 461.521126               # Specific gas constant of water [J/kg/K]
 erg2J          = 1e-07                    # Conversion factor from erg to J
+J2erg          = 10000000.0               # Conversion factor from J to erg
 cal2J          = 4.184                    # Conversion factor from cal to J
+J2cal          = 0.2390057361376673       # Conversion factor from J to cal
 atm2Pa         = 101325.0                 # Conversion factor from atm to Pa
 bar2Pa         = 100000.0                 # Conversion factor from bar to Pa
 absolute_zero  = 273.15                   # Zero °C in Kelvin
@@ -214,22 +217,55 @@ nu_backward = np.array([
 
 nu = nu_backward - nu_forward
 
+reaction_order = np.array([
+    [   2],    #  0. H+O2=O+OH
+    [   2],    #  1. O+H2=H+OH
+    [   2],    #  2. OH+H2=H+H2O
+    [   2],    #  3. 2OH=O+H2O
+    [   2],    #  4. 2H+M=H2+M
+    [   2],    #  5. 2O+M=O2+M
+    [   2],    #  6. O+H+M=OH+M
+    [   2],    #  7. H+OH+M=H2O+M
+    [   2],    #  8. H+O2(+M)=HO2(+M)
+    [   2],    #  9. H+HO2=H2+O2
+    [   2],    # 10. HO2+H=2OH
+    [   2],    # 11. HO2+O=OH+O2
+    [   2],    # 12. HO2+OH=H2O+O2
+    [   2],    # 13. 2HO2=H2O2+O2
+    [   2],    # 14. 2HO2=H2O2+O2
+    [   2],    # 15. 2OH(+M)=H2O2(+M)
+    [   2],    # 16. H2O2+H=H2O+OH
+    [   2],    # 17. H2O2+H=H2+HO2
+    [   2],    # 18. H2O2+O=OH+HO2
+    [   2],    # 19. H2O2+OH=H2O+HO2
+    [   2],    # 20. H2O2+OH=H2O+HO2
+    [   2],    # 21. H+O+M=OHEX+M
+    [   2],    # 22. OHEX+H2O=OH+H2O
+    [   2],    # 23. OHEX+H2=OH+H2
+    [   2],    # 24. OHEX+N2=OH+N2
+    [   2],    # 25. OHEX+OH=2OH
+    [   2],    # 26. OHEX+H=OH+H
+    [   2],    # 27. OHEX+AR=OH+AR
+    [   1],    # 28. OHEX=OH+HV
+    [   2]     # 29. OHEX+O2=OH+O2
+], dtype=np.int64)
+
 
 """________________________________Three-body reactions________________________________"""
 
-ThirdBodyIndexes = np.array([   8,  15], dtype=np.int64)
-ThirdBodyCount = 2
+ThirdBodyIndexes = np.array([   4,   5,   6,   7,   8,  15,  21], dtype=np.int64)
+ThirdBodyCount = 7
 
 # third-body efficiency factors
 alfa = np.array([
     #       H       H2        O       O2       OH      H2O       N2      HO2     H2O2       AR       HE     OHEX 
-    [     1.0,     2.5,     1.0,     1.0,     1.0,    12.0,     1.0,     1.0,     1.0,     1.0,    0.83,     1.0],
-    [     1.0,     2.5,     1.0,     1.0,     1.0,    12.0,     1.0,     1.0,     1.0,    0.83,    0.83,     1.0],
-    [     1.0,     2.5,     1.0,     1.0,     1.0,    12.0,     1.0,     1.0,     1.0,    0.75,    0.75,     1.0],
-    [     1.0,     2.5,     1.0,     1.0,     1.0,    12.0,     1.0,     1.0,     1.0,    0.38,    0.44,     1.0],
-    [     1.0,   1.511,     1.0,     1.0,     1.0,  11.372,     1.0,     1.0,     1.0,   0.474,    0.65,     1.0],
-    [     1.0,    2.47,     1.0,     0.8,     1.0,     5.0,     1.0,     1.0,    5.13,    0.67,    0.43,     1.0],
-    [     1.0,     1.0,     1.0,     0.4,     1.0,     6.5,     0.4,     1.0,     1.0,    0.35,     1.0,     1.0] 
+    [     1.0,     2.5,     1.0,     1.0,     1.0,    12.0,     1.0,     1.0,     1.0,     1.0,    0.83,     1.0],    #  4. 2H+M=H2+M
+    [     1.0,     2.5,     1.0,     1.0,     1.0,    12.0,     1.0,     1.0,     1.0,    0.83,    0.83,     1.0],    #  5. 2O+M=O2+M
+    [     1.0,     2.5,     1.0,     1.0,     1.0,    12.0,     1.0,     1.0,     1.0,    0.75,    0.75,     1.0],    #  6. O+H+M=OH+M
+    [     1.0,     2.5,     1.0,     1.0,     1.0,    12.0,     1.0,     1.0,     1.0,    0.38,    0.44,     1.0],    #  7. H+OH+M=H2O+M
+    [     1.0,   1.511,     1.0,     1.0,     1.0,  11.372,     1.0,     1.0,     1.0,   0.474,    0.65,     1.0],    #  8. H+O2(+M)=HO2(+M)
+    [     1.0,    2.47,     1.0,     0.8,     1.0,     5.0,     1.0,     1.0,    5.13,    0.67,    0.43,     1.0],    # 15. 2OH(+M)=H2O2(+M)
+    [     1.0,     1.0,     1.0,     0.4,     1.0,     6.5,     0.4,     1.0,     1.0,    0.35,     1.0,     1.0]     # 21. H+O+M=OHEX+M
 ], dtype=np.float64)
 
 

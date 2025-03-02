@@ -147,6 +147,7 @@ W = dict(
 physical_constants = dict(
     c_L = dict(value=1483.0, comment='Liquid sound speed at 30 °C [m/s]'),
     rho_L = dict(value=998.2, comment='Liquid density [kg/m^3]'),
+    C_p_L = dict(value=4178.0, comment='Isobar heat capacity of water [J/(kg*K)]'),
     sigma = dict(value=71.97e-3, comment='Surface tension [N/m]'),
     mu_L = dict(value=0.001, comment='Dynamic viscosity at 30 °C and 1 atm [Pa*s]'),
     P_v = dict(value=2338.1, comment='Saturated vapour pressure at 30 °C [Pa]'),
@@ -159,7 +160,9 @@ physical_constants = dict(
     k_B = dict(value=None, comment='Boltzmann constant [J/K]'),
     R_v = dict(value=None, comment='Specific gas constant of water [J/kg/K]'),
     erg2J = dict(value=1e-7, comment='Conversion factor from erg to J'),
+    J2erg = dict(value=1e+7, comment='Conversion factor from J to erg'),
     cal2J = dict(value=4.184, comment='Conversion factor from cal to J'),
+    J2cal = dict(value=1/4.184, comment='Conversion factor from J to cal'),
     atm2Pa = dict(value=101325.0, comment='Conversion factor from atm to Pa'),
     bar2Pa = dict(value=1.0e5, comment='Conversion factor from bar to Pa'),
     absolute_zero = dict(value=273.15, comment='Zero °C in Kelvin'),

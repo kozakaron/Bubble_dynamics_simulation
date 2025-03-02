@@ -13,6 +13,7 @@ import numpy as np
 
 c_L            = 1483.0                   # Liquid sound speed at 30 °C [m/s]
 rho_L          = 998.2                    # Liquid density [kg/m^3]
+C_p_L          = 4178.0                   # Isobar heat capacity of water [J/(kg*K)]
 sigma          = 0.07197                  # Surface tension [N/m]
 mu_L           = 0.001                    # Dynamic viscosity at 30 °C and 1 atm [Pa*s]
 P_v            = 2338.1                   # Saturated vapour pressure at 30 °C [Pa]
@@ -25,7 +26,9 @@ h              = 6.62607015e-34           # Planck constant [m^2*kg/s]
 k_B            = 1.3806487394846352e-23   # Boltzmann constant [J/K]
 R_v            = 461.521126               # Specific gas constant of water [J/kg/K]
 erg2J          = 1e-07                    # Conversion factor from erg to J
+J2erg          = 10000000.0               # Conversion factor from J to erg
 cal2J          = 4.184                    # Conversion factor from cal to J
+J2cal          = 0.2390057361376673       # Conversion factor from J to cal
 atm2Pa         = 101325.0                 # Conversion factor from atm to Pa
 bar2Pa         = 100000.0                 # Conversion factor from bar to Pa
 absolute_zero  = 273.15                   # Zero °C in Kelvin
@@ -253,6 +256,58 @@ nu_backward = np.array([
 ], dtype=np.float64)
 
 nu = nu_backward - nu_forward
+
+reaction_order = np.array([
+    [   1],    #  0. H2+M=2H+M
+    [   2],    #  1. H2+AR=2H+AR
+    [   1],    #  2. H2+HE=2H+HE
+    [   1],    #  3. N2+M=2N+M
+    [   1],    #  4. NH+H=N+H2
+    [   0],    #  5. 2NH=>N2+H2
+    [   0],    #  6. 2NH=>N2+2H
+    [   1],    #  7. NH+N=N2+H
+    [   0],    #  8. NH2+M=NH+H+M
+    [   1],    #  9. NH2+H=NH+H2
+    [   1],    # 10. NH2+N=N2+2H
+    [   0],    # 11. 2NH=NH2+N
+    [   0],    # 12. 2NH2=NH3+NH
+    [   0],    # 13. NH2+NH=NH3+N
+    [   1],    # 14. N2H2+M=NNH+H+M
+    [   2],    # 15. N2H2+H=NNH+H2
+    [   1],    # 16. N2H2+NH=NNH+NH2
+    [   1],    # 17. N2H2+NH2=NNH+NH3
+    [   0],    # 18. NH2+NH=N2H2+H
+    [   0],    # 19. 2NH2=N2H2+H2
+    [   0],    # 20. 2NH2(+M)=N2H4(+M)
+    [   1],    # 21. N2H4=N2H2+H2
+    [   2],    # 22. N2H4+H=N2H3+H2
+    [   1],    # 23. N2H4+NH2=N2H3+NH3
+    [   2],    # 24. N2H4+N2H2=2N2H3
+    [   1],    # 25. N2H4+NH=N2H3+NH2
+    [   1],    # 26. N2H3(+M)=N2H2+H(+M)
+    [   2],    # 27. N2H3+H=N2H2+H2
+    [   2],    # 28. N2H3+H=H2NN+H2
+    [   2],    # 29. N2H3+H=NH3+NH
+    [   1],    # 30. N2H3+NH2=N2H2+NH3
+    [   1],    # 31. N2H3+NH2=H2NN+NH3
+    [   1],    # 32. N2H3+NH=N2H2+NH2
+    [   2],    # 33. N2H3+N2H2=N2H4+NNH
+    [   2],    # 34. 2N2H3=2NH3+N2
+    [   2],    # 35. 2N2H2=N2H3+NNH
+    [   0],    # 36. 2NH2=H2NN+H2
+    [   1],    # 37. H2NN=NNH+H
+    [   2],    # 38. H2NN+H=NNH+H2
+    [   2],    # 39. H2NN+H=N2H2+H
+    [   1],    # 40. H2NN+NH2=NNH+NH3
+    [   0],    # 41. NH3+M=NH2+H+M
+    [   1],    # 42. NH3+H=NH2+H2
+    [   0],    # 43. NH3+NH2=N2H3+H2
+    [   0],    # 44. NNH=N2+H
+    [   1],    # 45. NNH+H=N2+H2
+    [   0],    # 46. NNH+NH=N2+NH2
+    [   0],    # 47. NNH+NH2=N2+NH3
+    [   0]     # 48. 2NNH=N2H2+N2
+], dtype=np.int64)
 
 
 """________________________________Three-body reactions________________________________"""

@@ -384,10 +384,10 @@ def _get_reactions(lines, species):
         isThirdBody = isPressureDependent = isTroe = isSRI = isPLOG = False
         isManualThirdBodyCoefficients = False
         
-        if '(+M)=' in line.replace(' ',''):
+        if '(+M)' in line.replace(' ','').replace('<=>', '=').replace('=>', '>').replace('>', '=>'):
             isPressureDependent = True
             isThirdBody = True
-        elif '+M=' in line.replace(' ',''): 
+        elif '+M' in line.replace(' ','').replace('<=>', '=').replace('=>', '>').replace('>', '=>'):
             isThirdBody = True
         
         if not any([keyword in lines[i] for keyword in keywords+['END']]):
@@ -574,6 +574,7 @@ def _get_nu(reactions, species, W):
 
     nu_forward = np.zeros((len(reactions), len(species)), dtype=int)
     nu_backward = np.zeros((len(reactions), len(species)), dtype=int)
+    reaction_order = np.zeros((len(reactions),1), dtype=int)
     IrreversibleIndexes = []
     digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
@@ -603,6 +604,7 @@ def _get_nu(reactions, species, W):
                 else:
                     print(colored(f'Warning, \'{f}\' in reaction {x} (\'{reactions[x]}\') is not in species, it is ignored', 'yellow'))
 
+        reaction_order[x] = np.sum(nu_forward[x])
         for b in backward:
             num = 1
             if b[0] in digits:
@@ -623,7 +625,7 @@ def _get_nu(reactions, species, W):
         if abs(sum(nu[i] * W)) > 1e-5:
             print(colored(f'Warning, nonconsistent reaction {i} (\'{reactions[i]}\')', 'yellow'))
     
-    return nu_forward, nu_backward, IrreversibleIndexes
+    return nu_forward, nu_backward, reaction_order, IrreversibleIndexes
 
 """________________________________Printing to file________________________________"""
 
@@ -652,7 +654,7 @@ def extract(path):
             TroeIndexes, Troe,
             SRIIndexes, SRI,
         PlogIndexes, Plog) = _get_reactions(lines, species)
-    nu_forward, nu_backward, IrreversibleIndexes = _get_nu(reactions, species, W)
+    nu_forward, nu_backward, reaction_order, IrreversibleIndexes = _get_nu(reactions, species, W)
     
   # Create parameters.py
     line_start = '\n\"\"\"________________________________'
@@ -719,6 +721,7 @@ def extract(path):
     text += f'# Backward reaction matrix\n'
     text += f'nu_backward = np.array('+ print_array(nu_backward, 4, [f'{x:>2}. {reaction}' for x, reaction in enumerate(reactions)], species) + ', dtype=np.float64)\n\n'
     text += f'nu = nu_backward - nu_forward\n\n'
+    text += f'reaction_order = np.array('+ print_array(reaction_order, 4, [f'{x:>2}. {reaction}' for x, reaction in enumerate(reactions)]) + ', dtype=np.int64)\n\n'
     
     # Three-body reactions
     text += line_start + 'Three-body reactions' + line_end

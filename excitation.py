@@ -196,6 +196,31 @@ def getExcitation(excitation_type='no_excitation'):
         defaults = [-2e5, -1e5, 30e3, 3.0, 2.0]
         return Excitation, args, units, defaults
     
+    elif excitation_type == 'double_sin_impulse_with_phase_shift':
+        @njit(Tuple((float64, float64))(float64, float64, float64[:]))
+        def Excitation(t, P_amb, args):
+            p_A1, p_A2, freq, freq_ratio, theta_phase, n = args
+            if t < 0.0:
+                p_Inf = P_amb
+                p_Inf_dot = 0.0
+            elif t > n / freq:
+                p_Inf = P_amb
+                p_Inf_dot = 0.0
+            else:
+                insin = 2.0*np.pi*freq
+                if(t<-theta_phase/(2.0*np.pi*freq*freq_ratio) or t>-theta_phase/(2.0*np.pi*freq*freq_ratio) + n/(freq*freq_ratio)):
+                    p_Inf = P_amb + p_A1*np.sin(insin*t)
+                    p_Inf_dot = p_A1*insin*np.cos(insin*t)
+                else:
+                    p_Inf = P_amb + p_A1*np.sin(insin*t) + p_A2*np.sin(freq_ratio*insin*t+theta_phase)
+                    p_Inf_dot = p_A1*insin*np.cos(insin*t) + p_A2*freq_ratio*insin*np.cos(freq_ratio*insin*t+theta_phase)
+            return p_Inf, p_Inf_dot
+
+        args = ['p_A1', 'p_A2', 'freq', 'freq_ratio', 'theta_phase', 'n']
+        units = ['Pa', 'Pa', 'Hz', '-', '-', '-']
+        defaults = [-2e5, -1e5, 30e3, 3.0, 0.0, 2.0]
+        return Excitation, args, units, defaults
+    
     elif excitation_type == 'multi_sin_impulse':
         @njit(Tuple((float64, float64))(float64, float64, float64[:]))
         def Excitation(t, P_amb, args):
