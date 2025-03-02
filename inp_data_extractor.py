@@ -368,6 +368,9 @@ def _get_reactions(lines, species):
 
     while not 'END' in lines[i]: 
         reaction_line = lines[i]
+        if 'DUP' in reaction_line:
+            i += 1
+            continue
         reaction_line = reaction_line.replace('<=>', '=')
         reaction_line = reaction_line.replace('=>', '>')
         reaction_line =  _separate(reaction_line, ' ')

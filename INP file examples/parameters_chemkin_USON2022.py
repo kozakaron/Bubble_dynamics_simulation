@@ -22,6 +22,7 @@ R_erg          = 83144600.0               # Universal gas constant [erg/mol/K]
 R_cal          = 1.987204                 # Universal gas constant [cal/mol/K]
 N_A            = 6.02214e+23              # Avogadro's number [-]
 h              = 6.62607015e-34           # Planck constant [m^2*kg/s]
+k_B            = 1.3806487394846352e-23   # Boltzmann constant [J/K]
 R_v            = 461.521126               # Specific gas constant of water [J/kg/K]
 erg2J          = 1e-07                    # Conversion factor from erg to J
 cal2J          = 4.184                    # Conversion factor from cal to J
