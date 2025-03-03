@@ -3,7 +3,7 @@
 
 This document is automatically generated from in code documentation. (multiline comments under function headers) 
 
-Date of generation: 2024.04.02 19:21:16 (YYYY.MM.DD HH:MM:SS) 
+Date of generation: 2025.03.03 16:49:42 (YYYY.MM.DD HH:MM:SS) 
 ## Table of contents
 
 0. [**inp_data_extractor.py**](#bookmark_inp_data_extractor)
@@ -184,6 +184,12 @@ External dependencies:
 
 ### Classes
 
+* **FunctionWrapper**
+
+	~~~Python
+	class FunctionWrapper(self, args, timeout)
+	~~~
+
 * **Make_dir**
 
 	~~~Python
@@ -251,6 +257,29 @@ External dependencies:
 		Writes the string into a new txt file. Also saves header with get_settings_and_info(). Arguments:
 		 * string: arbitrary string to write into the file
 		 * file_base_name: base name of the txt file (e.g. 'name' --> 'name.txt')
+		~~~
+
+* **Timeout**
+
+	~~~Python
+	class Timeout()
+	~~~
+
+	* *args*
+
+		~~~Python
+		def args()
+		~~~
+
+	* *with_traceback*
+
+		~~~Python
+		def with_traceback()
+		~~~
+
+		~~~
+		Exception.with_traceback(tb) --
+		set self.__traceback__ to tb and return self.
 		~~~
 
 * **dotdict**
@@ -429,7 +458,7 @@ External dependencies:
 	This function runs solve() and get_data(), then return with data. 
 	Input and output is (or can be) normal dictionary. 
 	It is used for multithreading (e.g. in Bruteforce_parameter_sweep.ipynb). 
-	The input (kwargs) is a dictionary with the keyword-argument pairs of solve().  
+	The input (kwargs) is a dictionary with the keyword-argument pairs of solve().
 	~~~
 
 * **solve**
@@ -484,6 +513,7 @@ Actual values might differ
  * **enable_dissipated_energy**: *bool* = `True`
  * **enable_evaporation**: *bool* = `False`
  * **enable_heat_transfer**: *bool* = `True`
+ * **enable_reaction_rate_threshold**: *bool* = `True`
  * **enable_reactions**: *bool* = `True`
  * **error_codes**: *dict* = `{'xx0': {'describtion': 'succecfully solved with LSODA solver', 'color': 'green'...`
  * **excitation_args**: *list* = `['p_A', 'freq', 'n']`
@@ -724,4 +754,4 @@ External dependencies:
 Actual values might differ
  * **document_private**: *bool* = `False`
  * **header**: *str* = `', # Bubble dynamics simulation documentation, , This document is automatically gene...'`
- * **to_document**: *list* = `[<module 'inp_data_extractor' from 'd:\\parameter_studies\\Bubble_dynamics_simul...`
+ * **to_document**: *list* = `[<module 'inp_data_extractor' from 'D:\\parameter_studies\\Bubble_dynamics_simul...`
