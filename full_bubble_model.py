@@ -113,8 +113,7 @@ if par.indexOfWater == -1:
 print(f'model: {par.model}')
 print(f'target specie: {target_specie}')
 print(f'excitation: {excitation_type} (control parameters: {excitation_args})')
-print(f'enable heat transfer: {_colorTF(enable_heat_transfer)}\tenable evaporation: {_colorTF(enable_evaporation)}\tenable reactions: {_colorTF(enable_reactions)}\tenable dissipated energy: {_colorTF(enable_dissipated_energy)}')
-print(f'enable reaction rate threshold: {_colorTF(enable_reaction_rate_threshold)}')
+print(f'enable heat transfer: {_colorTF(enable_heat_transfer)}\tenable evaporation: {_colorTF(enable_evaporation)}\tenable reactions: {_colorTF(enable_reactions)}\tenable dissipated energy: {_colorTF(enable_dissipated_energy)}\tenable reaction rate threshold: {_colorTF(enable_reaction_rate_threshold)}')
 if target_specie not in par.species:
     print(colored(f'Error, target specie \'{target_specie}\' not found in parameters.py', 'red'))
 
@@ -470,9 +469,16 @@ def _forward_rate(T, M_eff, M, p):
     return k_forward
 
 
-@njit(float64[:](float64[:], float64[:], float64[:], float64))
-def _backward_rate(k_forward, S, H, T):
+@njit(Tuple((float64[:],float64[:]))(float64[:], float64[:], float64[:], float64, float64))
+def _backward_rate(k_forward, S, H, T, reaction_rate_threshold):
     k_backward = np.zeros((par.I), dtype=np.float64)
+    
+    #Forward rate thresholding:
+    if(enable_reaction_rate_threshold):
+        for i in range(par.I):
+            if(abs(k_forward[i]) > reaction_rate_threshold * np.power(par.N_A, par.reaction_order[i, 0])):
+                k_forward[i] = reaction_rate_threshold * np.power(par.N_A, par.reaction_order[i, 0]) * np.sign(k_forward[i])
+    
     for i in range(par.I):
         DeltaS = 0.0
         DeltaH = 0.0
@@ -481,12 +487,18 @@ def _backward_rate(k_forward, S, H, T):
             DeltaH += par.nu[i][k] * H[k]
         K_p = np.exp(DeltaS / par.R_erg - DeltaH / (par.R_erg * T))
         K_c = K_p * (par.atm2Pa * 10.0 / (par.R_erg * T)) ** np.sum(par.nu[i])
-        #K_c += (K_c == 0.0) * 1.0e-323  # MODIFIED
+        K_c += (K_c == 0.0) * 1.0e-323  # To avoid division by zero
         k_backward[i] = k_forward[i] / K_c
+    # Backward rate thresholding:
+        if(enable_reaction_rate_threshold): 
+            if(abs(k_backward[i]) > reaction_rate_threshold * np.power(par.N_A, par.reaction_order[i, 0]) / K_c):
+                k_backward[i] = reaction_rate_threshold * np.power(par.N_A, par.reaction_order[i, 0]) / K_c * np.sign(k_backward[i])
+                k_forward[i] = K_c * k_backward[i]
+
     for i in par.IrreversibleIndexes:
         k_backward[i] = 0.0
-        
-    return k_backward
+    
+    return k_forward, k_backward
 
 
 @njit(float64[:](float64, float64[:], float64[:], float64[:], float64, float64, float64))
@@ -497,8 +509,9 @@ def _production_rate(T, H, S, c, P_amb, p, M):
         for k in range(par.K):
             M_eff[j] += par.alfa[j][k] * c[k]
 # Forward and backward rates
+    reaction_rate_threshold = par.k_B * T / par.h
     k_forward = _forward_rate(T=T, M_eff=M_eff, M=M, p=p)
-    k_backward = _backward_rate(k_forward=k_forward, S=S, H=H, T=T)
+    (k_forward, k_backward) = _backward_rate(k_forward=k_forward, S=S, H=H, T=T, reaction_rate_threshold=reaction_rate_threshold)
 
 # Net rates
     q = np.zeros((par.I), dtype = np.float64)
@@ -698,6 +711,9 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
             error_code += 1
             if print_errors:
                 print(colored(error_codes['xx1']['describtion'], error_codes['xx1']['color']))
+                print(num_sol.message)
+        elif print_errors:
+            print(colored(error_codes['xx0']['describtion'], error_codes['xx0']['color']))
     except Timeout:
         error_code += 2
         if print_errors:
@@ -715,6 +731,9 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
                 error_code += 40
                 if print_errors:
                     print(colored(error_codes['x4x']['describtion'], error_codes['x4x']['color']))
+                    print(num_sol.message)
+            elif print_errors:
+                print(colored(error_codes['x0x']['describtion'], error_codes['x0x']['color']))
         except Timeout:
             error_code += 50
             if print_errors:
@@ -731,6 +750,7 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
         num_sol.elapsed_time = elapsed_time
         num_sol.error_code = error_code
         num_sol.nfev = fun.nfev
+        num_sol.nstep = len(num_sol.t)
     
     return num_sol, error_code, elapsed_time
 
@@ -826,7 +846,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     data.success = success
     data.nstep = 0
     data.nfev = 0
-    data.njac = 0
+    data.njev = 0
     data.nlu = 0
     data.message = 'No data available.'
     if num_sol is None:
@@ -834,21 +854,21 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     
     # normal functioning
     data.steps = getattr(num_sol, 'nstep', 0)
-    data.x_initial = num_sol.y[0] # initial values of [R, R_dot, T, c_1, ... c_K]
+    data.x_initial = num_sol.y[:, 0] # initial values of [R, R_dot, T, c_1, ... c_K]
     loc_min = argrelmin(num_sol.y[:][0])
     if not len(loc_min) == 0 and not len(loc_min[0]) == 0:
         data.collapse_time = num_sol.t[loc_min[0][0]] # collapse time (first loc min of R) [s]
-    data.T_max = np.max(num_sol.y[:][2]) # maximum of temperature peaks [K]
+    data.T_max = np.max(num_sol.y[:, 2]) # maximum of temperature peaks [K]
     data.nstep = getattr(num_sol, 'nstep', 0)
     data.nfev = getattr(num_sol, 'nfev', 0)
-    data.njac = getattr(num_sol, 'njac', 0)
+    data.njev = getattr(num_sol, 'njev', 0)
     data.nlu = getattr(num_sol, 'nlu', 0)
     data.message = getattr(num_sol, 'message', 0).replace('\n', ' ').replace(',', ' ').replace(';', ' ')
         
     # energy calculations
-    data.x_last = num_sol.y[-1] # last values of [R, R_dot, T, c_1, ... c_K]
+    data.x_last = num_sol.y[:, -1] # last values of [R, R_dot, T, c_1, ... c_K]
     if not all(np.isfinite(data.x_last)) and len(num_sol.y > 2):
-        data.x_last = num_sol.y[-2]
+        data.x_last = num_sol.y[:, -2]
     data.t_last = num_sol.t[-1] # [s]
     last_V = 4.0 / 3.0 * (100.0 * data.x_last[0]) ** 3 * np.pi # [cm^3]
     data[f'n_{target_specie}'] = data.x_last[3+par.index[target_specie]] * last_V # [mol]
@@ -863,7 +883,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
 
 # keys of data: (except x_last and x_initial)
 keys = ['ID', 'R_E', 'ratio', 'P_amb', 'alfa_M', 'T_inf', 'P_v', 'mu_L', 'rho_L', 'gases', 'fractions', 'surfactant', 'c_L',
-        'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', 'nstep', 'nfev', 'njac', 'nlu', 'message',
+        'error_code', 'success', 'elapsed_time', 'steps', 'collapse_time', 'T_max', 'nstep', 'nfev', 'njev', 'nlu', 'message',
         f'n_{target_specie}', 'expansion_work', 'dissipated_acoustic_energy', 'energy_demand', 't_last',
         'enable_heat_transfer', 'enable_evaporation', 'enable_reactions', 'enable_dissipated_energy', 'excitation_type', 'target_specie'] + excitation_args
 
@@ -955,7 +975,7 @@ def print_data(cpar, data, print_it=True):
     text += f'''\nSimulation info:
     error_code ={data.error_code: .0f} (success = {data.success})
     elapsed_time ={data.elapsed_time: .2f} [s]
-    nstep = {data.nstep};   nfev = {data.nfev};   njac = {data.njac};   nlu = {data.nlu}'''
+    nstep = {data.nstep};   nfev = {data.nfev};   njev = {data.njev};   nlu = {data.nlu}'''
     
     text += f'''\n\nLast state:
     R_last ={1e6*data.x_last[0]: .2f} [um];   R_dot_last ={data.x_last[1]} [m/s];   T_last ={data.x_last[2]: .2f} [K]
@@ -1299,19 +1319,22 @@ class Make_dir:
         self.folder_name = folder_name
         self.file_base_name = file_base_name
         self.separator = separator
-        self.parent_dir = os.getcwd()
-        self.save_dir = os.path.join(self.parent_dir, folder_name)
+        self.parent_dir = os.path.abspath(os.path.dirname(folder_name))
+        self.folder_name = os.path.basename(folder_name)
         self.number = 1    # uniqe ID number for csv files
         self.lines = 0    # number of data lines in currently opened CCSV
         self.is_opened = False    # True, if a CSV is opened
         
-        if os.path.exists(self.save_dir):
-            self.new = False
-            self.number = len([1 for file in os.listdir(self.save_dir) if file[-4:] == '.csv']) + 1
-            print(f'Folder already exists with {self.number-1} csv in it')
+        num = 0
+        for file in os.listdir(self.parent_dir):
+            if os.path.basename(folder_name) in file:
+                num += 1
+        if num > 0:
+            self.save_dir = os.path.join(self.parent_dir, self.folder_name + f'_{num}')
         else:
-            self.new = True
-            os.mkdir(self.save_dir)
+            self.save_dir = os.path.join(self.parent_dir, self.folder_name)
+
+        os.mkdir(self.save_dir)
     
     def _list_to_string(self, array):
         """ Returns a string from a list e.g. [1, 2, 3] -> '1,2,3'"""
