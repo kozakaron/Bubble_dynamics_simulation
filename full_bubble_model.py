@@ -564,8 +564,8 @@ def _production_rate(T, H, S, c, P_amb, p, M):
 
 """________________________________Differential equation________________________________"""
 
-@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
-def _f(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, freq, thermodynamicalcase, ex_args, extra_dims=0): 
+@njit(float64[:](float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
+def _f(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, freq, thermodynamicalcase, shift_const, ex_args, extra_dims=0): 
     """ODE function for the bubble model. Returns the derivative of the state vector x at time t. 
     Use extra_dims to plot extra variables (e.g. energy) during the simulation. Will impact the performance."""   
     R = x[0] * R_E     # bubble radius [m]
@@ -573,7 +573,9 @@ def _f(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_
     if (thermodynamicalcase<2):
         R_dot = 0.0
     T = x[2] * T_inf     # temperature [K]
-    c = x[3:3+par.K]     # molar concentration [mol/cm^3]
+    c = np.zeros(par.K)
+    for k in range(par.K):
+        c[k] = np.exp(x[3+k]-shift_const)     # molar concentration [mol/cm^3]
     
     M = np.sum(c) # sum of concentration
     X = c / M     # mole fraction [-]
@@ -687,16 +689,17 @@ def _f(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_
     dxdt[0] = dxdt[0] / (R_E * freq)
     dxdt[1] = dxdt[1] / (R_E * freq * freq)
     dxdt[2] = dxdt[2] / (T_inf * freq)
-    dxdt[3:] = dxdt[3:] / freq
+    for k in range(par.K):
+        dxdt[3+k] = dxdt[3+k] / (freq*(c[k]+shift_const))
     return dxdt
 
 """________________________________Stop event________________________________"""
 
-@njit(float64(float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
-def stop_event(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, freq, thermodynamicalcase, ex_args, extra_dims=0):
+@njit(float64(float64, float64[:], float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64, float64[:], int64))
+def stop_event(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, freq, thermodynamicalcase, shift_const, ex_args, extra_dims=0):
     # Ha minden derivált abszolút értéke kisebb, mint 10e-10, az esemény bekövetkezik
     if(t>1.0e-3):
-        dxdt = _f(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, freq, thermodynamicalcase, ex_args, extra_dims=0)
+        dxdt = _f(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_starred, mu_L, rho_L, c_L, freq, thermodynamicalcase, shift_const, ex_args, extra_dims=0)
         check=np.zeros(3, dtype=np.float64)
         check[0]=dxdt[0] * freq/10000.0 #/(10000.0 * R_E) #10000 Hz as minimal excitation
         check[1]=dxdt[1] * (freq/10000.0) * (freq/10000.0) #/(10000.0**2.0 * R_E) #10000 Hz as minimal excitation
@@ -761,20 +764,22 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
     IC[0]=IC[0] / cpar.R_E
     IC[1]=IC[1] / (cpar.R_E * cpar.freq)
     IC[2]=IC[2] / cpar.T_inf
- 
+    for k in range(par.K):
+        IC[3+k]=np.log(IC[3+k] + cpar.shift_const)
+
     first_step=1.0e-7
     try: # try-catch block
         if(enable_time_evaluation_limit):
             num_sol = func_timeout( # timeout block
                 LSODA_timeout, solve_ivp,
                 kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step, events=stop_event,# solve_ivp()'s arguments
-                        args=(cpar.R_E, cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.freq, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
+                        args=(cpar.R_E, cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.freq, cpar.thermodynamicalcase, cpar.shift_const, ex_args, extra_dims) # _f()'s arguments
             ))
         else:
             num_sol = func_timeout( # timeout block
                 LSODA_timeout, solve_ivp,
                 kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='LSODA', atol = 1e-10, rtol=1e-10, first_step=first_step, events=stop_event,# solve_ivp()'s arguments
-                       args=(cpar.R_E, cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.freq, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments   
+                       args=(cpar.R_E, cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.freq, cpar.thermodynamicalcase, cpar.shift_const, ex_args, extra_dims) # _f()'s arguments   
             ))
         if num_sol.success == False:
             error_code += 1
@@ -794,13 +799,13 @@ def solve(cpar, t_int=np.array([0.0, 1.0]), LSODA_timeout=30.0, Radau_timeout=30
                 num_sol = func_timeout( # timeout block
                     Radau_timeout, solve_ivp, 
                     kwargs=dict(fun=_f, t_span=t_int, y0=IC, t_eval=t_eval, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step, events=stop_event,# solve_ivp()'s arguments
-                        args=(cpar.R_E, cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.freq, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
+                        args=(cpar.R_E, cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L, cpar.freq, cpar.thermodynamicalcase, cpar.shift_const, ex_args, extra_dims) # _f()'s arguments
                 ))
             else:
                 num_sol = func_timeout( # timeout block
                     Radau_timeout, solve_ivp, 
                     kwargs=dict(fun=_f, t_span=t_int, y0=IC, method='Radau', atol = 1e-10, rtol=1e-10, first_step=first_step, events=stop_event,# solve_ivp()'s arguments
-                        args=(cpar.R_E, cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L,  cpar.freq, cpar.thermodynamicalcase, ex_args, extra_dims) # _f()'s arguments
+                        args=(cpar.R_E, cpar.P_amb, cpar.alfa_M, cpar.Gamma, cpar.sigma_evap, cpar.T_inf, cpar.surfactant, cpar.P_v, cpar.C_4_starred, cpar.mu_L, cpar.rho_L, cpar.c_L,  cpar.freq, cpar.thermodynamicalcase, cpar.shift_const, ex_args, extra_dims) # _f()'s arguments
                 ))
             if num_sol.success == False:
                 error_code += 40
@@ -933,6 +938,8 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     num_sol.y[0,:] = num_sol.y[0,:] * cpar.R_E
     num_sol.y[1,:] = num_sol.y[1,:] * cpar.R_E * cpar.freq
     num_sol.y[2,:] = num_sol.y[2,:] * cpar.T_inf
+    for k in range(par.K):
+        num_sol.y[3+k,:] = np.exp(num_sol.y[3+k,:])-cpar.shift_const
     
     data.steps = len(num_sol.t)
     data.x_initial = num_sol.y[:, 0] # initial values of [R, R_dot, T, c_1, ... c_K]
