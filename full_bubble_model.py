@@ -24,10 +24,10 @@ Usage:
 
 """________________________________Settings________________________________"""
 
-enable_heat_transfer = False
+enable_heat_transfer = True
 enable_evaporation = False
 enable_reactions = True
-enable_dissipated_energy = False
+enable_dissipated_energy = True
 enable_reaction_rate_threshold = True
 enable_time_evaluation_limit = False
 target_specie = 'NH3' # Specie to calculate energy demand for
@@ -575,7 +575,7 @@ def _f(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_
     T = x[2] * T_inf     # temperature [K]
     c = np.zeros(par.K)
     for k in range(par.K):
-        c[k] = np.exp(x[3+k]-shift_const)     # molar concentration [mol/cm^3]
+        c[k] = np.exp(x[3+k])-shift_const     # molar concentration [mol/cm^3]
     
     M = np.sum(c) # sum of concentration
     X = c / M     # mole fraction [-]
@@ -691,6 +691,7 @@ def _f(t, x, R_E, P_amb, alfa_M, Gamma, sigma_evap, T_inf, surfactant, P_v, C_4_
     dxdt[2] = dxdt[2] / (T_inf * freq)
     for k in range(par.K):
         dxdt[3+k] = dxdt[3+k] / (freq*(c[k]+shift_const))
+    dxdt[-1] = dxdt[-1] / freq
     return dxdt
 
 """________________________________Stop event________________________________"""
