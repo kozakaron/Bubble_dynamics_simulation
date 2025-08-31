@@ -194,6 +194,57 @@ def check_cpar(cpar):
         return False
     
     return True
+
+
+def cpar_to_json(cpar):
+    """Converts cpar to the format used by the C++ interface."""
+
+    check_cpar(cpar)
+    excitation_params = []
+    for key in excitation_args:
+        excitation_params.append(cpar.get(key, 0.0))
+
+    model = par.model.lower().replace(' ', '_').replace('-', '_').replace('chemkin', 'chem')
+    if 'chem_kaust2023_n2' in model:
+        if 'without_o' in model:
+            mechanism = 'chemkin_kaust2023_n2_without_o'
+        else:
+            mechanism = 'chemkin_kaust2023_n2'
+    elif 'chem_otomo2018' in model:
+        if 'without_o' in model:
+            mechanism = 'chemkin_otomo2018_without_o'
+        else:
+            mechanism = 'chemkin_otomo2018'
+    elif 'chem_ar_he' in model:
+        mechanism = 'chemkin_ar_he'
+    else:
+        mechanism = 'chemkin_ar_he'
+        print(colored(f'Warning: Using default mechanism {mechanism} for model {par.model}', 'yellow'))
+
+    return dict(
+        ID = cpar['ID'],
+        mechanism = mechanism,
+        R_E = cpar['R_E'],
+        ratio = cpar['ratio'],
+        species = [par.species[i] for i in cpar['gases']],
+        fractions = cpar['fractions'],
+        P_amb = cpar['P_amb'],
+        T_inf = cpar['T_inf'],
+        alfa_M = cpar['alfa_M'],
+        P_v = cpar['P_v'],
+        mu_L = cpar['mu_L'],
+        rho_L = cpar['rho_L'],
+        c_L = cpar['c_L'],
+        surfactant = cpar['surfactant'],
+        enable_heat_transfer = enable_heat_transfer,
+        enable_evaporation = enable_evaporation,
+        enable_reactions = enable_reactions,
+        enable_dissipated_energy = enable_dissipated_energy,
+        target_specie = target_specie,
+        excitation_params = excitation_params,
+        excitation_type = excitation_type
+    )
+
     
 def example_cpar(normal_dict=False):
     """Provides an example of the control parameter dictionary. Use print_cpar() to print it. Parameters:
@@ -317,7 +368,7 @@ def _work(cpar, evaporation=False):
 def _pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, args):
     (p_Inf, p_Inf_dot) = Excitation(t, P_amb, args)
     p_L = p - (2.0 * surfactant * par.sigma + 4.0 * mu_L * R_dot) / R
-    p_L_dot = p_dot + (-2.0 * surfactant * par.sigma * R_dot + 4.0 * mu_L * R_dot ** 2) / (R ** 2)
+    p_L_dot = p_dot + (2.0 * surfactant * par.sigma * R_dot + 4.0 * mu_L * R_dot ** 2) / (R ** 2)
     delta = (p_L - p_Inf) / rho_L
     delta_dot = (p_L_dot - p_Inf_dot) / rho_L
     return delta, delta_dot
@@ -330,66 +381,83 @@ def _pressure(t, R, R_dot, mu_L, surfactant, rho_L, p, p_dot, P_amb, args):
 def _thermodynamic(T):
     ret = np.zeros((4, par.K), dtype=np.float64)   # [C_p, H, S, C_v]
     for k in range(par.K):
-    # get coefficients for T
-        if T <= par.TempRange[k][2]: # T <= T_mid
+    # get coefficients for T: a={a1, a2, a3, a4, a5, a6, a7}
+        T_low = par.TempRange[k][0]
+        T_high = par.TempRange[k][1] 
+        T_mid = par.TempRange[k][2]
+    
+        if T <= T_mid:
             a = par.a_low[k]
-        else:  # T_mid < T
+        else:
             a = par.a_high[k]
-    # calculate sums
-        C_p = H = S = 0.0
-        for n in range(par.N): # [0, 1, 2, 3, 4]
-            T_pow = T**n
-            C_p += a[n] * T_pow
-            H += a[n] * T_pow / float64(n+1)
-            if n != 0:
-                S += a[n] * T_pow / float64(n)
-    # calculations outside the sums
+
+    # calculate polynomials
+        # Cp/R = a1 + a2*T + a3*T^2 + a4*T^3 + a5*T^4
+        # H/RT = a1 + a2*T /2 + a3*T^2 /3 + a4*T^3 /4 + a5*T^4 /5 + a6/T
+        # S/R  = a1*lnT + a2*T + a3*T^2 /2 + a4*T^3 /3 + a5*T^4 /4 + a7
+        # dCp/dT = R * (a2 + 2*a3*T + 3*a4*T^2 + 4*a5*T^3)
+        # dH/dT = R * (a1 + a2*T + a3*T^2 + a4*T^3 + a5*T^4)
+        # dS/dT = R * (a1/T + a2 + a3*T + a4*T^2 + a5*T^3)
+        T1 = min(T_high, T)
+        T2 = T1 * T1
+        T3 = T2 * T1
+        T4 = T2 * T2
+        T5 = T3 * T2
+
         # Molar heat capacities at constant pressure (isobaric) [erg/mol/K]
-        ret[0][k] = par.R_erg * C_p
+        C_p = par.R_erg * (a[0] + a[1]*T1 + a[2]*T2 + a[3]*T3 + a[4]*T4)
         # Enthalpies [erg/mol]
-        ret[1][k] = par.R_erg * (T * H + a[par.N])
+        H = par.R_erg * (a[0]*T1 + a[1]*T2/2.0 + a[2]*T3/3.0 + a[3]*T4/4.0 + a[4]*T5/5.0 + a[5])
         # Entropies [erg/mol/K]
-        ret[2][k] = par.R_erg * (a[0] * np.log(T) + S + a[par.N+1])
+        S = par.R_erg * (a[0] * np.log(T1) + a[1]*T1 + a[2]*T2/2.0 + a[3]*T3/3.0 + a[4]*T4/4.0 + a[6])
         # Molar heat capacities at constant volume (isochoric) [erg/mol/K]
-        ret[3][k] = ret[0][k] - par.R_erg
+        C_v = C_p - par.R_erg
+
+        if T < T_high:
+            ret[0][k] = C_p
+            ret[1][k] = H
+            ret[2][k] = S
+            ret[3][k] = C_v
+        else:
+            dCp_dT = par.R_erg * (a[1] + 2.0*a[2]*T1 + 3.0*a[3]*T2 + 4.0*a[4]*T3)
+            dH_dT = par.R_erg * (a[0] + a[1]*T1 + a[2]*T2 + a[3]*T3 + a[4]*T4)
+            dS_dT = par.R_erg * (a[0]/T1 + a[1] + a[2]*T1 + a[3]*T2 + a[4]*T3)
+    
+            ret[0][k] = C_p + dCp_dT * (T - T_high)
+            ret[1][k] = H + dH_dT * (T - T_high)
+            ret[2][k] = S + dS_dT * (T - T_high)
+            ret[3][k] = ret[0][k] - par.R_erg
 
     return ret
 
 
 """________________________________Evaporation________________________________"""
 
-@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64))
-def _evaporation(p, T, X_H2O, alfa_M, T_inf, P_v):
+@njit(Tuple((float64, float64))(float64, float64, float64, float64, float64, float64, float64))
+def _evaporation(p, T, X_H2O, alfa_M, T_inf, P_v, C_V_H2O):
 # condensation and evaporation
     p_H2O = X_H2O * p
     n_eva_dot = 1.0e3 * alfa_M * P_v / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T_inf))
     n_con_dot = 1.0e3 * alfa_M * p_H2O / (par.W[par.indexOfWater] * np.sqrt(2.0 * np.pi * par.R_v * T))
     n_net_dot = n_eva_dot - n_con_dot
-# Molar heat capacity of water at constant volume (isochoric) [J/mol/K]
-    # get coefficients for T
-    if T <= par.TempRange[par.indexOfWater][2]: # T <= T_mid
-        a = par.a_low[par.indexOfWater]
-    else:  # T_mid < T
-        a = par.a_high[par.indexOfWater]
-    # calculate sum
-    C_V = 0.0
-    for n in range(par.N): # [0, 1, 2, 3, 4]
-        C_V += a[n] * T**n
-    C_V = par.R_erg * (C_V - 1.0)
-
+# Molar heat capacity of water at constant volume (isochoric) [erg/mol/K]
     # get coefficients for T
     if T_inf <= par.TempRange[par.indexOfWater][2]: # T_inf <= T_mid
         a = par.a_low[par.indexOfWater]
     else:  # T_mid < T_inf
         a = par.a_high[par.indexOfWater]
-    # calculate sum
-    C_V_inf = 0.0
-    for n in range(par.N): # [0, 1, 2, 3, 4]
-        C_V_inf += a[n] * T_inf**n
-    C_V_inf = par.R_erg * (C_V_inf - 1.0)
+
+    # calculate polynomial
+    if T_inf <= par.TempRange[par.indexOfWater][1]: # T <= T_high
+        C_V_inf = par.R_erg * (a[0] + a[1]*T_inf + a[2]*T_inf**2 + a[3]*T_inf**3 + a[4]*T_inf**4 - 1.0)    # [erg/mol/K]
+    else:  # T_high < T
+        T_high = par.TempRange[par.indexOfWater][1]
+        C_p_high = par.R_erg * (a[0] + a[1]*T_high + a[2]*T_high**2 + a[3]*T_high**3 + a[4]*T_high**4)    # [erg/mol/K]
+        dCp_dT = par.R_erg * (a[1] + 2.0*a[2]*T_high + 3.0*a[3]*T_high**2 + 4.0*a[4]*T_high**3)
+        C_V_inf = C_p_high + dCp_dT * (T_inf - T_high) - par.R_erg   # [erg/mol/K]
 # Evaporation energy [J/mol]
     e_eva = C_V_inf * T_inf * 1e-7
-    e_con = C_V * T * 1e-7
+    e_con = C_V_H2O * T * 1e-7
     evap_energy = n_eva_dot * e_eva - n_con_dot * e_con    # [W/m^2]
     
     return n_net_dot, evap_energy
@@ -580,7 +648,7 @@ def _f(t, x, P_amb, alfa_M, T_inf, surfactant, P_v, mu_L, rho_L, c_L, ex_args, e
     c_dot = omega_dot - c * 3.0 * R_dot / R
 # Evaporation
     if enable_evaporation:
-        n_net_dot, evap_energy = _evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], alfa_M=alfa_M, T_inf=T_inf, P_v=P_v)
+        n_net_dot, evap_energy = _evaporation(p=p, T=T, X_H2O=X[par.indexOfWater], alfa_M=alfa_M, T_inf=T_inf, P_v=P_v, C_V_H2O=C_v[par.indexOfWater])
         c_dot[par.indexOfWater] += 1.0e-6 * n_net_dot * 3.0 / R    # water evaporation
     else:
         n_net_dot = evap_energy = 0.0
@@ -858,7 +926,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
     loc_min = argrelmin(num_sol.y[:][0])
     if not len(loc_min) == 0 and not len(loc_min[0]) == 0:
         data.collapse_time = num_sol.t[loc_min[0][0]] # collapse time (first loc min of R) [s]
-    data.T_max = np.max(num_sol.y[:, 2]) # maximum of temperature peaks [K]
+    data.T_max = np.max(num_sol.y[:][2]) # maximum of temperature peaks [K]
     data.nstep = getattr(num_sol, 'nstep', 0)
     data.nfev = getattr(num_sol, 'nfev', 0)
     data.njev = getattr(num_sol, 'njev', 0)
@@ -867,7 +935,7 @@ def get_data(cpar, num_sol, error_code, elapsed_time):
         
     # energy calculations
     data.x_last = num_sol.y[:, -1] # last values of [R, R_dot, T, c_1, ... c_K]
-    if not all(np.isfinite(data.x_last)) and len(num_sol.y > 2):
+    if not all(np.isfinite(data.x_last)) and len(num_sol.y) > 2:
         data.x_last = num_sol.y[:, -2]
     data.t_last = num_sol.t[-1] # [s]
     last_V = 4.0 / 3.0 * (100.0 * data.x_last[0]) ** 3 * np.pi # [cm^3]
