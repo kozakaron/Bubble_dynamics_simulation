@@ -684,14 +684,15 @@ def extract(path):
     text += f'W = np.array([      {print_array(W, 10, max_len=max_len)[1:]}, dtype=np.float64)\n\n'
     text += f'# thermal conductivity [W / m / K]\n'
     text += f'lambdas = np.array({print_array(lambdas, 10, max_len=max_len)}, dtype=np.float64)\n\n'
-    text += f'index = dict(\n\t'
+    text += 'index = {\n\t'
     for i, specie in enumerate(species):
-        text += f'{specie: >6}={i: >2}'
+        specie_text = f"'{specie}'"
+        text += f'{specie_text: >8}: {i: >2}'
         if (i+1) % 10 == 0 and i != len(species)-1:
             text += ',\n\t'
         elif i != len(species)-1:
             text += ', '
-    text += '\n)\n\n'
+    text += '\n}\n\n'
     text += f'indexOfWater = ' + ( '-1' if not 'H2O' in species else str(species.index('H2O')) ) + '\n'
     text += f'K = {len(W)}   # Number of species\n\n'
     

@@ -1402,7 +1402,8 @@ class Make_dir:
         else:
             self.save_dir = os.path.join(self.parent_dir, self.folder_name)
 
-        os.mkdir(self.save_dir)
+        if not os.path.exists(self.save_dir):
+            os.mkdir(self.save_dir)
     
     def _list_to_string(self, array):
         """ Returns a string from a list e.g. [1, 2, 3] -> '1,2,3'"""

@@ -421,10 +421,17 @@ NH2+NH2=NH3+NH                       5.6E00   3.530     552 !
 NH2+NH=NH3+N                         9.6E03   2.460     107 ! 
 NH2+N =N2+H+H                        7.0E13   0.000       0 ! 
 NH2+HNO=NH3+NO                       3.6E06   1.630   -1250 ! 
-NH2+NO=N2+H2O                        1.3E16   -1.25       0 ! 
+
+!!! Negative rate fix
+!NH2+NO=N2+H2O                        1.3E16   -1.25       0 ! 
+! DUP
+!NH2+NO=N2+H2O                       -3.1E13   -0.48    1180 ! 
+! DUP
+NH2+NO=N2+H2O                        4.1488e+18   -2.2811       0 ! 
  DUP
-NH2+NO=N2+H2O                       -3.1E13   -0.48    1180 ! 
+NH2+NO=N2+H2O                       2.3418e+27   -4.6692    5798.0 ! 
  DUP
+
 NH2+NO=NNH+OH                        4.29E10   0.29    -870 ! 
 NH2+HONO=NH3+NO2                     7.1E01   3.020   -4940 ! 
 NH2+NO2=N2O+H2O                      2.6E18  -2.191     455 ! 
