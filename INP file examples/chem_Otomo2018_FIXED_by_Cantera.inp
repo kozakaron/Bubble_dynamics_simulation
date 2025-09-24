@@ -350,10 +350,18 @@ O+H2=OH+H                            3.8E12   0.000    7948 !
 O+H2=OH+H                            8.8E14   0.000   19175 ! 
  DUPLICATE                                                  !
 OH+H2=H+H2O                          2.2E08   1.510    3430 ! 
-OH+OH=O+H2O                          1.4E07   1.689   -1167 !
+
+!!! Negative rate fix
+!OH+OH=O+H2O                          1.4E07   1.689   -1167 !
+! DUPLICATE
+!OH+OH=O+H2O                         -2.7E10   0.567       0 !
+! DUPLICATE
+OH+OH=O+H2O                          1.2876e7  1.6988   128.5
  DUPLICATE
-OH+OH=O+H2O                         -2.7E10   0.567       0 !
+OH+OH=O+H2O                          1.0992e+16 -1.7004   0.0
  DUPLICATE
+
+
 H2+M=H+H+M                           4.6E19  -1.400  104380 !
  H2/2.5/ H2O/12/ AR/0.0/ 
 H2+AR=H+H+AR                         5.8E18  -1.100  104380 !
