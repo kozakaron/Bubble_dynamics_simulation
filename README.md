@@ -1,3 +1,6 @@
+> **Deprecation warning!**
+> This repository is no longer maintained. Use [https://github.com/kozakaron/Bubble_dynamics_simulation_CPP](https://github.com/kozakaron/Bubble_dynamics_simulation_CPP) instead. This is a similar simulation written in C++ with superior performance, more capabiliteies, and several modelling mistakes fixed.
+
 #  Bubble dynamics simulation
 
 Tutorial video: [Magyar](https://youtu.be/YWsT1ktUzVw), [English]()
